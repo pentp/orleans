@@ -1,4 +1,4 @@
-﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
@@ -22,7 +22,7 @@ namespace Orleans.CodeGenerator.Utilities
         public static SyntaxToken ToIdentifier(this string identifier)
         {
             identifier = identifier.TrimStart('@');
-            
+
             if (Identifier.IsCSharpKeyword(identifier))
             {
                 return VerbatimIdentifier(
@@ -47,11 +47,10 @@ namespace Orleans.CodeGenerator.Utilities
 
         public static ExpressionSyntax ToHexLiteral(this int val)
         {
-            ExpressionSyntax expr = CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)),
-                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal($"0x{val:X}", val)));
+            ExpressionSyntax expr = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal($"0x{val:X}", val));
             if (val < 0)
             {
-                expr = CheckedExpression(SyntaxKind.UncheckedExpression, expr);
+                expr = CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), expr));
             }
 
             return expr;

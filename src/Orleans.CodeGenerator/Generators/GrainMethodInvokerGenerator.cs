@@ -46,12 +46,12 @@ namespace Orleans.CodeGenerator.Generators
             var genericTypes = grainType.GetHierarchyTypeParameters()
                 .Select(_ => TypeParameter(_.ToString()))
                 .ToArray();
-            
+
             // Create the special method invoker marker attribute.
             var interfaceId = description.InterfaceId;
             var interfaceIdArgument = interfaceId.ToHexLiteral();
             var grainTypeArgument = TypeOfExpression(grainType.WithoutTypeParameters().ToTypeSyntax());
-            var attributes = new List<AttributeSyntax>
+            var attributes = new[]
             {
                 GeneratedCodeAttributeGenerator.GetGeneratedCodeAttributeSyntax(wellKnownTypes),
                 Attribute(wellKnownTypes.MethodInvokerAttribute.ToNameSyntax())
@@ -75,14 +75,14 @@ namespace Orleans.CodeGenerator.Generators
                 baseTypes.Add(SimpleBaseType(wellKnownTypes.IGrainExtensionMethodInvoker.ToTypeSyntax()));
                 members.Add(GenerateExtensionInvokeMethod(wellKnownTypes, grainType, genericInvokerFields));
             }
-            
+
             var classDeclaration =
                 ClassDeclaration(generatedTypeName)
                     .AddModifiers(Token(SyntaxKind.InternalKeyword))
                     .AddBaseListTypes(baseTypes.ToArray())
                     .AddConstraintClauses(grainType.GetTypeConstraintSyntax())
-                    .AddMembers(members.ToArray())
-                    .AddAttributeLists(AttributeList().AddAttributes(attributes.ToArray()));
+                    .WithMembers(List(members))
+                    .AddAttributeLists(AttributeList().AddAttributes(attributes));
             if (genericTypes.Length > 0)
             {
                 classDeclaration = classDeclaration.AddTypeParameterListParameters(genericTypes);
@@ -121,7 +121,7 @@ namespace Orleans.CodeGenerator.Generators
         {
             // Get the method with the correct type.
             var invokeMethod = wellKnownTypes.IGrainExtensionMethodInvoker.Method("Invoke", wellKnownTypes.IGrainExtension, wellKnownTypes.InvokeMethodRequest);
-            
+
             return GenerateInvokeMethod(wellKnownTypes, grainType, invokeMethod, genericInvokerFields);
         }
 
@@ -172,16 +172,9 @@ namespace Orleans.CodeGenerator.Generators
                 .AddModifiers(Token(SyntaxKind.AsyncKeyword))
                 .AddBodyStatements(interfaceIdDeclaration, methodIdDeclaration, argumentsDeclaration);
 
-            var callThrowMethodNotImplemented = InvocationExpression(IdentifierName("ThrowMethodNotImplemented"))
-                .WithArgumentList(ArgumentList(SeparatedList(new[]
-                {
-                    Argument(interfaceIdVariable),
-                    Argument(methodIdVariable)
-                })));
-
             // This method is used directly after its declaration to create blocks for each interface id, comprising
             // primarily of a nested switch statement for each of the methods in the given interface.
-            BlockSyntax ComposeInterfaceBlock(INamedTypeSymbol interfaceType, SwitchStatementSyntax methodSwitch)
+            SyntaxList<StatementSyntax> ComposeInterfaceBlock(INamedTypeSymbol interfaceType, StatementSyntax s1, StatementSyntax s2)
             {
                 var typedGrainDeclaration = LocalDeclarationStatement(
                     VariableDeclaration(IdentifierName("var"))
@@ -189,42 +182,23 @@ namespace Orleans.CodeGenerator.Generators
                             VariableDeclarator("casted")
                                 .WithInitializer(EqualsValueClause(ParenthesizedExpression(CastExpression(interfaceType.ToTypeSyntax(), grainArgument))))));
 
-                return Block(typedGrainDeclaration,
-                    methodSwitch.AddSections(SwitchSection()
-                        .AddLabels(DefaultSwitchLabel())
-                        .AddStatements(
-                            ExpressionStatement(callThrowMethodNotImplemented),
-                            ReturnStatement(LiteralExpression(SyntaxKind.NullLiteralExpression)))));
+                return SingletonList<StatementSyntax>(Block(typedGrainDeclaration, s1, s2));
             }
 
-            var interfaceCases = GrainInterfaceCommon.GenerateGrainInterfaceAndMethodSwitch(
+            return GrainInterfaceCommon.GenerateGrainInterfaceAndMethodSwitch(
                 wellKnownTypes,
                 grainType,
+                interfaceIdVariable,
                 methodIdVariable,
                 methodType => GenerateInvokeForMethod(wellKnownTypes, IdentifierName("casted"), methodType, argumentsVariable, genericInvokerFields),
-                ComposeInterfaceBlock);
-            
-            var throwInterfaceNotImplemented = GrainInterfaceCommon.GenerateMethodNotImplementedFunction(wellKnownTypes);
-            var throwMethodNotImplemented = GrainInterfaceCommon.GenerateInterfaceNotImplementedFunction(wellKnownTypes);
-
-            // Generate the default case, which will call the above local function to throw .
-            var callThrowInterfaceNotImplemented = InvocationExpression(IdentifierName("ThrowInterfaceNotImplemented"))
-                .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(interfaceIdVariable))));
-            var defaultCase = SwitchSection()
-                .AddLabels(DefaultSwitchLabel())
-                .AddStatements(
-                    ExpressionStatement(callThrowInterfaceNotImplemented),
-                    ReturnStatement(LiteralExpression(SyntaxKind.NullLiteralExpression)));
-
-            var interfaceIdSwitch =
-                SwitchStatement(interfaceIdVariable).AddSections(interfaceCases.ToArray()).AddSections(defaultCase);
-            return methodDeclaration.AddBodyStatements(interfaceIdSwitch, throwInterfaceNotImplemented, throwMethodNotImplemented);
+                ComposeInterfaceBlock,
+                methodDeclaration);
         }
 
         /// <summary>
         /// Generates syntax to invoke a method on a grain.
         /// </summary>
-        private StatementSyntax[] GenerateInvokeForMethod(
+        private SyntaxList<StatementSyntax> GenerateInvokeForMethod(
             WellKnownTypes wellKnownTypes,
             ExpressionSyntax castGrain,
             IMethodSymbol method,
@@ -232,16 +206,16 @@ namespace Orleans.CodeGenerator.Generators
             Dictionary<IMethodSymbol, GenericInvokerField> genericInvokerFields)
         {
             // Construct expressions to retrieve each of the method's parameters.
-            var parameters = new List<ExpressionSyntax>();
-            var methodParameters = method.Parameters.ToList();
-            for (var i = 0; i < methodParameters.Count; i++)
+            var parameters = new List<ArgumentSyntax>();
+            var methodParameters = method.Parameters;
+            for (var i = 0; i < methodParameters.Length; i++)
             {
                 var parameter = methodParameters[i];
                 var parameterType = parameter.Type.ToTypeSyntax();
                 var indexArg = Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(i)));
-                var arg = CastExpression(
+                var arg = Argument(CastExpression(
                     parameterType,
-                    ElementAccessExpression(arguments).AddArgumentListArguments(indexArg));
+                    ElementAccessExpression(arguments).AddArgumentListArguments(indexArg)));
                 parameters.Add(arg);
             }
 
@@ -253,38 +227,35 @@ namespace Orleans.CodeGenerator.Generators
                                         IdentifierName(invokerFieldName)
                                           .Member(wellKnownTypes.IGrainMethodInvoker.Method("Invoke").Name))
                                     .AddArgumentListArguments(Argument(castGrain), Argument(arguments));
-                return new StatementSyntax[] { ReturnStatement(AwaitExpression(invokerCall)) };
+                return SingletonList<StatementSyntax>(ReturnStatement(AwaitExpression(invokerCall)));
             }
 
             // Invoke the method.
             var grainMethodCall =
                     InvocationExpression(castGrain.Member(method.Name))
-                      .AddArgumentListArguments(parameters.Select(Argument).ToArray());
+                      .AddArgumentListArguments(parameters.ToArray());
 
             // For void methods, invoke the method and return null.
             if (method.ReturnsVoid)
             {
-                return new StatementSyntax[]
+                return List(new StatementSyntax[]
                 {
                     ExpressionStatement(grainMethodCall),
                     ReturnStatement(LiteralExpression(SyntaxKind.NullLiteralExpression))
-                };
+                });
             }
 
             // For methods which return an awaitable type which has no result type, await the method and return null.
             if (method.ReturnType.Method("GetAwaiter").ReturnType.Method("GetResult").ReturnsVoid)
             {
-                return new StatementSyntax[]
+                return List(new StatementSyntax[]
                 {
                     ExpressionStatement(AwaitExpression(grainMethodCall)),
                     ReturnStatement(LiteralExpression(SyntaxKind.NullLiteralExpression))
-                };
+                });
             }
 
-            return new StatementSyntax[]
-            {
-                ReturnStatement(AwaitExpression(grainMethodCall))
-            };
+            return SingletonList<StatementSyntax>(ReturnStatement(AwaitExpression(grainMethodCall)));
         }
 
         /// <summary>

@@ -30,7 +30,7 @@ namespace Orleans.Runtime.GrainDirectory
             else
             {
                 var tag = directoryPartition.AddActivation(address.Grain, address.Activation, address.Silo);
-                return new AddressAndTag() { Address = address, VersionTag = tag };
+                return new AddressAndTag(address, tag);
             }
         }
   

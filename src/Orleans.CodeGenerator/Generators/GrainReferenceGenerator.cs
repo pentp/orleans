@@ -175,6 +175,7 @@ namespace Orleans.CodeGenerator.Generators
                 var options = GetInvokeOptions(method);
 
                 // Construct the invocation call.
+                ExpressionSyntax methodResult = null;
                 bool asyncMethod;
                 var isOneWayTask = method.HasAttribute(wellKnownTypes.OneWayAttribute);
                 if (method.ReturnsVoid || isOneWayTask)
@@ -191,6 +192,7 @@ namespace Orleans.CodeGenerator.Generators
                         invocation = invocation.AddArgumentListArguments(options);
                     }
 
+                    methodResult = invocation;
                     body.Add(ExpressionStatement(invocation));
 
                     if (isOneWayTask)
@@ -236,7 +238,7 @@ namespace Orleans.CodeGenerator.Generators
                         invocation = invocation.AddArgumentListArguments(options);
                     }
 
-                    var methodResult = asyncMethod ? AwaitExpression(invocation) : (ExpressionSyntax)invocation;
+                    methodResult = asyncMethod ? AwaitExpression(invocation) : (ExpressionSyntax)invocation;
 
                     if (this.wellKnownTypes.ValueTask is WellKnownTypes.Some valueTask
                         && SymbolEqualityComparer.Default.Equals(valueTask.Value, methodReturnType))
@@ -255,9 +257,11 @@ namespace Orleans.CodeGenerator.Generators
                     .WithParameterList(ParameterList().AddParameters(paramDeclaration.ToArray()))
                     .WithModifiers(TokenList())
                     .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(method.ContainingType.ToNameSyntax()))
-                    .AddBodyStatements(body.ToArray())
                     // Since explicit implementation is used, constraints must not be specified.
                     .WithConstraintClauses(new SyntaxList<TypeParameterConstraintClauseSyntax>());
+
+                methodDeclaration = body.Count > 1 ? methodDeclaration.WithBody(Block(body))
+                    : methodDeclaration.WithExpressionBody(ArrowExpressionClause(methodResult)).WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
                 if (asyncMethod) methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.AsyncKeyword));
 
@@ -420,46 +424,14 @@ namespace Orleans.CodeGenerator.Generators
             var interfaceIdArgument = parameters[0].Name.ToIdentifierName();
             var methodIdArgument = parameters[1].Name.ToIdentifierName();
 
-            var callThrowMethodNotImplemented = InvocationExpression(IdentifierName("ThrowMethodNotImplemented"))
-                .WithArgumentList(ArgumentList(SeparatedList(new[]
-                {
-                    Argument(interfaceIdArgument),
-                    Argument(methodIdArgument)
-                })));
-
-            // This method is used directly after its declaration to create blocks for each interface id, comprising
-            // primarily of a nested switch statement for each of the methods in the given interface.
-            BlockSyntax ComposeInterfaceBlock(INamedTypeSymbol interfaceType, SwitchStatementSyntax methodSwitch)
-            {
-                return Block(methodSwitch.AddSections(SwitchSection()
-                        .AddLabels(DefaultSwitchLabel())
-                        .AddStatements(
-                            ExpressionStatement(callThrowMethodNotImplemented),
-                            ReturnStatement(LiteralExpression(SyntaxKind.NullLiteralExpression)))));
-            }
-
-            var interfaceCases = GrainInterfaceCommon.GenerateGrainInterfaceAndMethodSwitch(
+            return GrainInterfaceCommon.GenerateGrainInterfaceAndMethodSwitch(
                 wellKnownTypes,
                 description.Type,
+                interfaceIdArgument,
                 methodIdArgument,
-                methodType => new StatementSyntax[] { ReturnStatement(methodType.Name.ToLiteralExpression()) },
-                ComposeInterfaceBlock);
-
-            // Generate the default case, which will throw a NotImplementedException.
-            var callThrowInterfaceNotImplemented = InvocationExpression(IdentifierName("ThrowInterfaceNotImplemented"))
-                .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(interfaceIdArgument))));
-            var defaultCase = SwitchSection()
-                .AddLabels(DefaultSwitchLabel())
-                .AddStatements(
-                    ExpressionStatement(callThrowInterfaceNotImplemented),
-                    ReturnStatement(LiteralExpression(SyntaxKind.NullLiteralExpression)));
-
-            var throwInterfaceNotImplemented = GrainInterfaceCommon.GenerateMethodNotImplementedFunction(wellKnownTypes);
-            var throwMethodNotImplemented = GrainInterfaceCommon.GenerateInterfaceNotImplementedFunction(wellKnownTypes);
-
-            var interfaceIdSwitch =
-                SwitchStatement(interfaceIdArgument).AddSections(interfaceCases.ToArray()).AddSections(defaultCase);
-            return methodDeclaration.AddBodyStatements(interfaceIdSwitch, throwInterfaceNotImplemented, throwMethodNotImplemented);
+                methodType => SingletonList<StatementSyntax>(ReturnStatement(methodType.Name.ToLiteralExpression())),
+                (_, s1, s2) => List(new[] { s1, s2 }),
+                methodDeclaration);
         }
     }
 }

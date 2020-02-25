@@ -319,8 +319,7 @@ namespace Orleans.Runtime.GrainDirectory
                     partitionData[grain] = grainInfo = new GrainInfo();
                 }
 
-                result.Address = grainInfo.AddSingleActivation(grain, activation, silo, registrationStatus);
-                result.VersionTag = grainInfo.VersionTag;
+                result = new AddressAndTag(grainInfo.AddSingleActivation(grain, activation, silo, registrationStatus), grainInfo.VersionTag);
             }
 
             return result;

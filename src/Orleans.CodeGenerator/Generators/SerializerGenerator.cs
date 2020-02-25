@@ -179,7 +179,7 @@ namespace Orleans.CodeGenerator.Generators
                 if (!field.IsGettableProperty || !field.IsSettableProperty)
                 {
                     body.Add(LocalDeclarationStatement(
-                        VariableDeclaration(wellKnownTypes.FieldInfo.ToTypeSyntax()).AddVariables(fieldInfoVariable)));
+                        VariableDeclaration(IdentifierName("var")).AddVariables(fieldInfoVariable)));
                 }
 
                 // Set the getter/setter of the field
@@ -242,7 +242,7 @@ namespace Orleans.CodeGenerator.Generators
 
             var resultDeclaration =
                 LocalDeclarationStatement(
-                    VariableDeclaration(type.ToTypeSyntax())
+                    VariableDeclaration(IdentifierName("var"))
                         .AddVariables(
                             VariableDeclarator("result")
                                 .WithInitializer(EqualsValueClause(GetObjectCreationExpressionSyntax(type, model)))));
@@ -285,7 +285,7 @@ namespace Orleans.CodeGenerator.Generators
                 body.Add(ExpressionStatement(invokeOnDeserialized));
             }
 
-            body.Add(ReturnStatement(CastExpression(type.ToTypeSyntax(), resultVariable)));
+            body.Add(ReturnStatement(resultVariable));
             return
                 MethodDeclaration(wellKnownTypes.Object.ToTypeSyntax(), "Deserializer")
                     .AddModifiers(Token(SyntaxKind.PublicKeyword))
@@ -305,7 +305,7 @@ namespace Orleans.CodeGenerator.Generators
             var body = new List<StatementSyntax>
             {
                 LocalDeclarationStatement(
-                    VariableDeclaration(type.ToTypeSyntax())
+                    VariableDeclaration(IdentifierName("var"))
                         .AddVariables(
                             VariableDeclarator("input")
                                 .WithInitializer(
@@ -360,7 +360,7 @@ namespace Orleans.CodeGenerator.Generators
                 var inputVariable = IdentifierName("input");
                 body.Add(
                     LocalDeclarationStatement(
-                        VariableDeclaration(type.ToTypeSyntax())
+                        VariableDeclaration(IdentifierName("var"))
                             .AddVariables(
                                 VariableDeclarator("input")
                                     .WithInitializer(
@@ -378,7 +378,7 @@ namespace Orleans.CodeGenerator.Generators
                     var resultVariable = IdentifierName("result");
                     body.Add(
                     LocalDeclarationStatement(
-                        VariableDeclaration(type.ToTypeSyntax())
+                        VariableDeclaration(IdentifierName("var"))
                             .AddVariables(
                                 VariableDeclarator("result")
                                     .WithInitializer(EqualsValueClause(GetObjectCreationExpressionSyntax(type, model))))));

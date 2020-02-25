@@ -145,22 +145,22 @@ namespace Orleans.CodeGenerator.Utilities
             if (!(method.ReturnType is INamedTypeSymbol returnType)) throw new InvalidOperationException($"Return type \"{method.ReturnType?.GetType()}\" for method {method} is not a named type.");
             var syntax =
                 MethodDeclaration(ToTypeSyntax(returnType), method.Name.ToIdentifier())
-                    .WithParameterList(ParameterList().AddParameters(method.Parameters.Select(p => Parameter(p.Name.ToIdentifier()).WithType(p.Type.ToTypeSyntax())).ToArray()));
+                    .WithParameterList(ParameterList(SeparatedList(method.Parameters.Select(p => Parameter(p.Name.ToIdentifier()).WithType(p.Type.ToTypeSyntax())))));
             if (method.IsGenericMethod)
             {
-                syntax = syntax.WithTypeParameterList(TypeParameterList().AddParameters(method.GetTypeParameterListSyntax()));
+                syntax = syntax.WithTypeParameterList(TypeParameterList(SeparatedList(method.GetTypeParameterListSyntax())));
 
                 // Handle type constraints on type parameters.
                 var typeParameters = method.TypeParameters;
                 var typeParameterConstraints = new List<TypeParameterConstraintClauseSyntax>();
                 foreach (var arg in typeParameters)
                 {
-                    typeParameterConstraints.AddRange(GetTypeParameterConstraints(arg));
+                    GetTypeParameterConstraints(arg, typeParameterConstraints);
                 }
 
                 if (typeParameterConstraints.Count > 0)
                 {
-                    syntax = syntax.AddConstraintClauses(typeParameterConstraints.ToArray());
+                    syntax = syntax.WithConstraintClauses(List(typeParameterConstraints));
                 }
             }
 
@@ -171,7 +171,7 @@ namespace Orleans.CodeGenerator.Utilities
 
         public static ArrayTypeSyntax GetArrayTypeSyntax(this TypeSyntax type)
         {
-            return ArrayType(type, SingletonList(ArrayRankSpecifier(SingletonSeparatedList<ExpressionSyntax>(OmittedArraySizeExpression()))));
+            return ArrayType(type, SingletonList(ArrayRankSpecifier()));
         }
 
         public static ConstructorDeclarationSyntax GetConstructorDeclarationSyntax(this IMethodSymbol constructor, string typeName)
@@ -247,18 +247,17 @@ namespace Orleans.CodeGenerator.Utilities
                 var constraints = new List<TypeParameterConstraintClauseSyntax>();
                 foreach (var genericParameter in type.GetHierarchyTypeParameters())
                 {
-                    constraints.AddRange(GetTypeParameterConstraints(genericParameter));
+                    GetTypeParameterConstraints(genericParameter, constraints);
                 }
 
                 return constraints.ToArray();
             }
 
-            return new TypeParameterConstraintClauseSyntax[0];
+            return Array.Empty<TypeParameterConstraintClauseSyntax>();
         }
 
-        private static TypeParameterConstraintClauseSyntax[] GetTypeParameterConstraints(ITypeParameterSymbol genericParameter)
+        private static void GetTypeParameterConstraints(ITypeParameterSymbol genericParameter, List<TypeParameterConstraintClauseSyntax> results)
         {
-            var results = new List<TypeParameterConstraintClauseSyntax>();
             var parameterConstraints = new List<TypeParameterConstraintSyntax>();
 
             // The "class" or "struct" constraints must come first.
@@ -296,8 +295,6 @@ namespace Orleans.CodeGenerator.Utilities
                     TypeParameterConstraintClause(genericParameter.Name)
                                  .AddConstraints(parameterConstraints.ToArray()));
             }
-
-            return results.ToArray();
         }
 
         public static MemberAccessExpressionSyntax Member(this ExpressionSyntax instance, string member)

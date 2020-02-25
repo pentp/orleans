@@ -1,8 +1,9 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
+    [Serializable, Immutable]
     public struct MembershipVersion : IComparable<MembershipVersion>, IEquatable<MembershipVersion>
     {
         public MembershipVersion(long version)

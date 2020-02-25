@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 
 namespace Orleans.GrainDirectory
@@ -71,11 +72,17 @@ namespace Orleans.GrainDirectory
     }
 
 
-    [Serializable]
+    [Serializable, Immutable]
     internal struct AddressAndTag
     {
-        public ActivationAddress Address;
-        public int VersionTag;
+        public readonly ActivationAddress Address;
+        public readonly int VersionTag;
+
+        public AddressAndTag(ActivationAddress address, int versionTag)
+        {
+            this.Address = address;
+            this.VersionTag = versionTag;
+        }
     }
     
 

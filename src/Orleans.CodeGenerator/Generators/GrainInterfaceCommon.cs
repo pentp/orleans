@@ -18,6 +18,9 @@ namespace Orleans.CodeGenerator.Generators
         /// </summary>
         /// <param name="types" />
         /// <param name="grainType" />
+        /// <param name="interfaceIdArgument">
+        /// The interface id argument, which is used to select the correct switch label.
+        /// </param>
         /// <param name="methodIdArgument">
         /// The method id argument, which is used to select the correct switch label.
         /// </param>
@@ -27,18 +30,20 @@ namespace Orleans.CodeGenerator.Generators
         /// <param name="composeInterfaceBlock">
         /// The function used to compose method switch blocks for each interface.
         /// </param>
-        /// <returns>
-        /// The switch cases for the provided grain type.
-        /// </returns>
-        public static SwitchSectionSyntax[] GenerateGrainInterfaceAndMethodSwitch(
+        /// <param name="methodDeclaration" />
+        public static MethodDeclarationSyntax GenerateGrainInterfaceAndMethodSwitch(
             WellKnownTypes types,
             INamedTypeSymbol grainType,
+            ExpressionSyntax interfaceIdArgument,
             ExpressionSyntax methodIdArgument,
-            Func<IMethodSymbol, StatementSyntax[]> generateMethodHandler,
-            Func<INamedTypeSymbol, SwitchStatementSyntax, BlockSyntax> composeInterfaceBlock)
+            Func<IMethodSymbol, SyntaxList<StatementSyntax>> generateMethodHandler,
+            Func<INamedTypeSymbol, StatementSyntax, StatementSyntax, SyntaxList<StatementSyntax>> composeInterfaceBlock,
+            MethodDeclarationSyntax methodDeclaration)
         {
-            var interfaces = new List<INamedTypeSymbol> {grainType};
+            var interfaces = new List<INamedTypeSymbol> { grainType };
             interfaces.AddRange(grainType.AllInterfaces.Where(types.IsGrainInterface));
+
+            var methodDefaultCase = GotoStatement(SyntaxKind.GotoStatement, IdentifierName("MethodNI"));
 
             // Switch on interface id.
             var interfaceCases = new List<SwitchSectionSyntax>();
@@ -68,21 +73,39 @@ namespace Orleans.CodeGenerator.Generators
                     var methodInvokeStatement = generateMethodHandler(method.Value);
 
                     methodCases.Add(
-                        SwitchSection().AddLabels(methodIdSwitchLabel).AddStatements(methodInvokeStatement));
+                        SwitchSection(SingletonList<SwitchLabelSyntax>(methodIdSwitchLabel), methodInvokeStatement));
                 }
 
                 // Generate the switch label for this interface id.
                 var interfaceIdSwitchLabel = CaseSwitchLabel(interfaceId.ToHexLiteral());
-                
+
                 // Generate switch statements for the methods in this interface.
-                var methodSwitchStatements = composeInterfaceBlock(type, SwitchStatement(methodIdArgument).AddSections(methodCases.ToArray()));
+                var methodSwitchStatements = methodCases.Count == 0
+                    ? SingletonList<StatementSyntax>(methodDefaultCase)
+                    : composeInterfaceBlock(type, SwitchStatement(methodIdArgument, List(methodCases)), methodDefaultCase);
 
                 // Generate the switch section for this interface.
                 interfaceCases.Add(
-                    SwitchSection().AddLabels(interfaceIdSwitchLabel).AddStatements(methodSwitchStatements));
+                    SwitchSection(SingletonList<SwitchLabelSyntax>(interfaceIdSwitchLabel), methodSwitchStatements));
             }
 
-            return interfaceCases.ToArray();
+            var callThrowInterfaceNotImplemented = InvocationExpression(IdentifierName("ThrowInterfaceNotImplemented"))
+                .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(interfaceIdArgument))));
+
+            var callThrowMethodNotImplemented = InvocationExpression(IdentifierName("ThrowMethodNotImplemented"))
+                .WithArgumentList(ArgumentList(SeparatedList(new[]
+                {
+                    Argument(interfaceIdArgument),
+                    Argument(methodIdArgument)
+                })));
+
+            return methodDeclaration.AddBodyStatements(
+                SwitchStatement(interfaceIdArgument, List(interfaceCases)),
+                ExpressionStatement(callThrowInterfaceNotImplemented),
+                LabeledStatement("MethodNI", ExpressionStatement(callThrowMethodNotImplemented)),
+                ThrowStatement(LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                interfaceNotImplementedFunction ??= GenerateInterfaceNotImplementedFunction(types),
+                methodNotImplementedFunction ??= GenerateMethodNotImplementedFunction(types));
         }
 
         public static PropertyDeclarationSyntax GenerateInterfaceIdProperty(WellKnownTypes wellKnownTypes, GrainInterfaceDescription description)
@@ -109,7 +132,10 @@ namespace Orleans.CodeGenerator.Generators
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
         }
 
-        public static LocalFunctionStatementSyntax GenerateMethodNotImplementedFunction(
+        private static LocalFunctionStatementSyntax interfaceNotImplementedFunction;
+        private static LocalFunctionStatementSyntax methodNotImplementedFunction;
+
+        private static LocalFunctionStatementSyntax GenerateInterfaceNotImplementedFunction(
             WellKnownTypes types,
             string interfaceIdVariableName = "i",
             string functionName = "ThrowInterfaceNotImplemented")
@@ -134,7 +160,7 @@ namespace Orleans.CodeGenerator.Generators
             return throwInterfaceNotImplemented;
         }
 
-        public static LocalFunctionStatementSyntax GenerateInterfaceNotImplementedFunction(
+        private static LocalFunctionStatementSyntax GenerateMethodNotImplementedFunction(
             WellKnownTypes types,
             string interfaceIdVariableName = "i",
             string methodIdVariableName = "m",

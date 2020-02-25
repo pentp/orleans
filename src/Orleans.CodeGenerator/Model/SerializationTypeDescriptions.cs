@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -12,7 +11,7 @@ namespace Orleans.CodeGenerator.Model
         public HashSet<KnownTypeDescription> KnownTypes { get; } = new HashSet<KnownTypeDescription>(KnownTypeDescription.Comparer);
     }
 
-    internal class SerializerTypeDescription
+    internal sealed class SerializerTypeDescription
     {
         public bool OverrideExistingSerializer { get; set; }
 
@@ -30,23 +29,21 @@ namespace Orleans.CodeGenerator.Model
 
         private sealed class TargetEqualityComparer : IEqualityComparer<SerializerTypeDescription>
         {
+            private readonly SymbolEqualityComparer comparer = SymbolEqualityComparer.Default;
+
             public bool Equals(SerializerTypeDescription x, SerializerTypeDescription y)
             {
                 if (ReferenceEquals(x, y)) return true;
-                if (ReferenceEquals(x, null)) return false;
-                if (ReferenceEquals(y, null)) return false;
-                if (x.GetType() != y.GetType()) return false;
-                return SymbolEqualityComparer.Default.Equals(x.Target, y.Target);
+                if (x is null) return false;
+                if (y is null) return false;
+                return this.comparer.Equals(x.Target, y.Target);
             }
 
-            public int GetHashCode(SerializerTypeDescription obj)
-            {
-                return obj.Target != null ? obj.Target.GetHashCode() : 0;
-            }
+            public int GetHashCode(SerializerTypeDescription obj) => this.comparer.GetHashCode(obj.Target);
         }
     }
 
-    public class KnownTypeDescription
+    internal struct KnownTypeDescription
     {
         public KnownTypeDescription(INamedTypeSymbol type)
         {
@@ -61,22 +58,11 @@ namespace Orleans.CodeGenerator.Model
 
         private sealed class TypeTypeKeyEqualityComparer : IEqualityComparer<KnownTypeDescription>
         {
-            public bool Equals(KnownTypeDescription x, KnownTypeDescription y)
-            {
-                if (ReferenceEquals(x, y)) return true;
-                if (ReferenceEquals(x, null)) return false;
-                if (ReferenceEquals(y, null)) return false;
-                if (x.GetType() != y.GetType()) return false;
-                return SymbolEqualityComparer.Default.Equals(x.Type, y.Type);
-            }
+            private readonly SymbolEqualityComparer comparer = SymbolEqualityComparer.Default;
 
-            public int GetHashCode(KnownTypeDescription obj)
-            {
-                unchecked
-                {
-                    return ((obj.Type != null ? obj.Type.GetHashCode() : 0) * 397);
-                }
-            }
+            public bool Equals(KnownTypeDescription x, KnownTypeDescription y) => this.comparer.Equals(x.Type, y.Type);
+
+            public int GetHashCode(KnownTypeDescription obj) => this.comparer.GetHashCode(obj.Type);
         }
     }
 }

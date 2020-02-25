@@ -100,7 +100,7 @@ namespace Orleans.CodeGenerator.Generators
             var featureParameter = interfaceMethod.Parameters.First().Name.ToIdentifierName();
 
             var bodyStatements = new List<StatementSyntax>();
-            
+
             foreach (var serializerType in typeDescriptions.SerializerTypes)
             {
                 if (serializerType.SerializerTypeSyntax == null) continue;
@@ -113,7 +113,7 @@ namespace Orleans.CodeGenerator.Generators
                                 Argument(TypeOfExpression(serializerType.SerializerTypeSyntax)),
                                 Argument(LiteralExpression(overrideExisting)))));
             }
-            
+
             foreach (var knownType in typeDescriptions.KnownTypes)
             {
                 bodyStatements.Add(
@@ -124,7 +124,10 @@ namespace Orleans.CodeGenerator.Generators
                                 Argument(knownType.TypeKey.ToLiteralExpression()))));
             }
 
-            return interfaceMethod.GetDeclarationSyntax().AddBodyStatements(bodyStatements.ToArray());
+            return interfaceMethod.GetDeclarationSyntax()
+                .WithLeadingTrivia(Trivia(LineDirectiveTrivia(Token(SyntaxKind.HiddenKeyword), true)))
+                .AddBodyStatements(bodyStatements.ToArray())
+                .WithTrailingTrivia(Trivia(LineDirectiveTrivia(Token(SyntaxKind.DefaultKeyword), true)));
         }
     }
 }
