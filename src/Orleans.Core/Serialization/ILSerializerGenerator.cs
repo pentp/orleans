@@ -129,11 +129,13 @@ namespace Orleans.Serialization
             il.CreateInstance(type, result, SerializationMethodInfos.GetUninitializedObject);
 
             // Record the object.
-            il.LoadArgument(1); // Load 'context' parameter.
-            il.LoadArgument(0); // Load 'original' parameter.
-            il.LoadLocal(result); // Load 'result' local.
-            il.BoxIfValueType(type);
-            il.Call(SerializationMethodInfos.RecordObjectWhileCopying);
+            if (!type.IsValueType)
+            {
+                il.LoadArgument(1); // Load 'context' parameter.
+                il.LoadArgument(0); // Load 'original' parameter.
+                il.LoadLocal(result); // Load 'result' local.
+                il.Call(SerializationMethodInfos.RecordObjectWhileCopying);
+            }
 
             // Copy each field.
             foreach (var field in fields)

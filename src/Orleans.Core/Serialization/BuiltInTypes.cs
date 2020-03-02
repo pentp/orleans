@@ -16,7 +16,8 @@ namespace Orleans.Serialization
 {
     internal static class BuiltInTypes
     {
-        private static readonly Type objectType = typeof(object);
+        private static T DeepCopyInner<T>(T original, ICopyContext context)
+            => typeof(T).IsOrleansShallowCopyable() ? original : (T)SerializationManager.DeepCopyInner(original, context);
 
         internal static void SerializeGenericReadOnlyCollection(object original, ISerializationContext context, Type expected)
         {
@@ -494,18 +495,22 @@ namespace Orleans.Serialization
 
         internal static object DeepCopyStack<T>(object original, ICopyContext context)
         {
-            var stack = (Stack<T>)original;
+            var stack = ((Stack<T>)original).ToArray();
+            var retVal = new Stack<T>(stack.Length);
 
             if (typeof(T).IsOrleansShallowCopyable())
             {
-                return new Stack<T>(stack.Reverse()); // NOTE: Yes, the Reverse really is required
+                for (int i = stack.Length - 1; i >= 0; i--)
+                {
+                    retVal.Push(stack[i]);
+                }
+                return retVal;
             }
 
-            var retVal = new Stack<T>();
             context.RecordCopy(original, retVal);
-            foreach (var item in stack.Reverse())
+            for (int i = stack.Length - 1; i >= 0; i--)
             {
-                retVal.Push((T)SerializationManager.DeepCopyInner(item, context));
+                retVal.Push((T)SerializationManager.DeepCopyInner(stack[i], context));
             }
             return retVal;
         }
@@ -571,7 +576,7 @@ namespace Orleans.Serialization
             context.RecordCopy(original, result);
             foreach (var pair in dict)
             {
-                result[(K)SerializationManager.DeepCopyInner(pair.Key, context)] = (V)SerializationManager.DeepCopyInner(pair.Value, context);
+                result[DeepCopyInner(pair.Key, context)] = DeepCopyInner(pair.Value, context);
             }
 
             return result;
@@ -635,7 +640,7 @@ namespace Orleans.Serialization
             var innerDict = new Dictionary<K, V>(dict.Count);
             foreach (var pair in dict)
             {
-                innerDict[(K)SerializationManager.DeepCopyInner(pair.Key, context)] = (V)SerializationManager.DeepCopyInner(pair.Value, context);
+                innerDict[DeepCopyInner(pair.Key, context)] = DeepCopyInner(pair.Value, context);
             }
 
             var retVal = new ReadOnlyDictionary<K, V>(innerDict);
@@ -653,7 +658,7 @@ namespace Orleans.Serialization
             {
                 //context.Stream.WriteTypeHeader(stringType, stringType);
                 context.StreamWriter.Write(pair.Key);
-                SerializationManager.SerializeInner(pair.Value, context, objectType);
+                SerializationManager.SerializeInner(pair.Value, context, typeof(object));
             }
         }
 
@@ -745,7 +750,7 @@ namespace Orleans.Serialization
             context.RecordCopy(original, result);
             foreach (var pair in dict)
             {
-                result[(K)SerializationManager.DeepCopyInner(pair.Key, context)] = (V)SerializationManager.DeepCopyInner(pair.Value, context);
+                result[DeepCopyInner(pair.Key, context)] = DeepCopyInner(pair.Value, context);
             }
 
             return result;
@@ -810,7 +815,7 @@ namespace Orleans.Serialization
             context.RecordCopy(original, result);
             foreach (var pair in list)
             {
-                result[(K)SerializationManager.DeepCopyInner(pair.Key, context)] = (V)SerializationManager.DeepCopyInner(pair.Value, context);
+                result[DeepCopyInner(pair.Key, context)] = DeepCopyInner(pair.Value, context);
             }
 
             return result;
@@ -1229,7 +1234,7 @@ namespace Orleans.Serialization
         internal static object DeepCopyTuple1<T1>(object original, ICopyContext context)
         {
             var input = (Tuple<T1>)original;
-            var result = new Tuple<T1>((T1)SerializationManager.DeepCopyInner(input.Item1, context));
+            var result = new Tuple<T1>(DeepCopyInner(input.Item1, context));
             context.RecordCopy(original, result);
             return result;
         }
@@ -1249,7 +1254,7 @@ namespace Orleans.Serialization
         internal static object DeepCopyTuple2<T1, T2>(object original, ICopyContext context)
         {
             var input = (Tuple<T1, T2>)original;
-            var result = new Tuple<T1, T2>((T1)SerializationManager.DeepCopyInner(input.Item1, context), (T2)SerializationManager.DeepCopyInner(input.Item2, context));
+            var result = new Tuple<T1, T2>(DeepCopyInner(input.Item1, context), DeepCopyInner(input.Item2, context));
             context.RecordCopy(original, result);
             return result;
         }
@@ -1271,8 +1276,8 @@ namespace Orleans.Serialization
         internal static object DeepCopyTuple3<T1, T2, T3>(object original, ICopyContext context)
         {
             var input = (Tuple<T1, T2, T3>)original;
-            var result = new Tuple<T1, T2, T3>((T1)SerializationManager.DeepCopyInner(input.Item1, context), (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context));
+            var result = new Tuple<T1, T2, T3>(DeepCopyInner(input.Item1, context), DeepCopyInner(input.Item2, context),
+                DeepCopyInner(input.Item3, context));
             context.RecordCopy(original, result);
             return result;
         }
@@ -1296,9 +1301,9 @@ namespace Orleans.Serialization
         internal static object DeepCopyTuple4<T1, T2, T3, T4>(object original, ICopyContext context)
         {
             var input = (Tuple<T1, T2, T3, T4>)original;
-            var result = new Tuple<T1, T2, T3, T4>((T1)SerializationManager.DeepCopyInner(input.Item1, context), (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context));
+            var result = new Tuple<T1, T2, T3, T4>(DeepCopyInner(input.Item1, context), DeepCopyInner(input.Item2, context),
+                DeepCopyInner(input.Item3, context),
+                DeepCopyInner(input.Item4, context));
             context.RecordCopy(original, result);
             return result;
         }
@@ -1324,10 +1329,10 @@ namespace Orleans.Serialization
         internal static object DeepCopyTuple5<T1, T2, T3, T4, T5>(object original, ICopyContext context)
         {
             var input = (Tuple<T1, T2, T3, T4, T5>)original;
-            var result = new Tuple<T1, T2, T3, T4, T5>((T1)SerializationManager.DeepCopyInner(input.Item1, context), (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context),
-                (T5)SerializationManager.DeepCopyInner(input.Item5, context));
+            var result = new Tuple<T1, T2, T3, T4, T5>(DeepCopyInner(input.Item1, context), DeepCopyInner(input.Item2, context),
+                DeepCopyInner(input.Item3, context),
+                DeepCopyInner(input.Item4, context),
+                DeepCopyInner(input.Item5, context));
             context.RecordCopy(original, result);
             return result;
         }
@@ -1355,11 +1360,11 @@ namespace Orleans.Serialization
         internal static object DeepCopyTuple6<T1, T2, T3, T4, T5, T6>(object original, ICopyContext context)
         {
             var input = (Tuple<T1, T2, T3, T4, T5, T6>)original;
-            var result = new Tuple<T1, T2, T3, T4, T5, T6>((T1)SerializationManager.DeepCopyInner(input.Item1, context), (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context),
-                (T5)SerializationManager.DeepCopyInner(input.Item5, context),
-                (T6)SerializationManager.DeepCopyInner(input.Item6, context));
+            var result = new Tuple<T1, T2, T3, T4, T5, T6>(DeepCopyInner(input.Item1, context), DeepCopyInner(input.Item2, context),
+                DeepCopyInner(input.Item3, context),
+                DeepCopyInner(input.Item4, context),
+                DeepCopyInner(input.Item5, context),
+                DeepCopyInner(input.Item6, context));
             context.RecordCopy(original, result);
             return result;
         }
@@ -1389,12 +1394,12 @@ namespace Orleans.Serialization
         internal static object DeepCopyTuple7<T1, T2, T3, T4, T5, T6, T7>(object original, ICopyContext context)
         {
             var input = (Tuple<T1, T2, T3, T4, T5, T6, T7>)original;
-            var result = new Tuple<T1, T2, T3, T4, T5, T6, T7>((T1)SerializationManager.DeepCopyInner(input.Item1, context), (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context),
-                (T5)SerializationManager.DeepCopyInner(input.Item5, context),
-                (T6)SerializationManager.DeepCopyInner(input.Item6, context),
-                (T7)SerializationManager.DeepCopyInner(input.Item7, context));
+            var result = new Tuple<T1, T2, T3, T4, T5, T6, T7>(DeepCopyInner(input.Item1, context), DeepCopyInner(input.Item2, context),
+                DeepCopyInner(input.Item3, context),
+                DeepCopyInner(input.Item4, context),
+                DeepCopyInner(input.Item5, context),
+                DeepCopyInner(input.Item6, context),
+                DeepCopyInner(input.Item7, context));
             context.RecordCopy(original, result);
             return result;
         }
@@ -1421,6 +1426,46 @@ namespace Orleans.Serialization
             var item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
             var item7 = (T7)SerializationManager.DeserializeInner(typeof(T7), context);
             return new Tuple<T1, T2, T3, T4, T5, T6, T7>(item1, item2, item3, item4, item5, item6, item7);
+        }
+
+        internal static object DeepCopyTuple8<T1, T2, T3, T4, T5, T6, T7, T8>(object original, ICopyContext context)
+        {
+            var input = (Tuple<T1, T2, T3, T4, T5, T6, T7, T8>)original;
+            var result = new Tuple<T1, T2, T3, T4, T5, T6, T7, T8>(DeepCopyInner(input.Item1, context), DeepCopyInner(input.Item2, context),
+                DeepCopyInner(input.Item3, context),
+                DeepCopyInner(input.Item4, context),
+                DeepCopyInner(input.Item5, context),
+                DeepCopyInner(input.Item6, context),
+                DeepCopyInner(input.Item7, context),
+                DeepCopyInner(input.Rest, context));
+            context.RecordCopy(original, result);
+            return result;
+        }
+
+        internal static void SerializeTuple8<T1, T2, T3, T4, T5, T6, T7, T8>(object obj, ISerializationContext context, Type expected)
+        {
+            var input = (Tuple<T1, T2, T3, T4, T5, T6, T7, T8>)obj;
+            SerializationManager.SerializeInner(input.Item1, context, typeof(T1));
+            SerializationManager.SerializeInner(input.Item2, context, typeof(T2));
+            SerializationManager.SerializeInner(input.Item3, context, typeof(T3));
+            SerializationManager.SerializeInner(input.Item4, context, typeof(T4));
+            SerializationManager.SerializeInner(input.Item5, context, typeof(T5));
+            SerializationManager.SerializeInner(input.Item6, context, typeof(T6));
+            SerializationManager.SerializeInner(input.Item7, context, typeof(T7));
+            SerializationManager.SerializeInner(input.Rest, context, typeof(T8));
+        }
+
+        internal static object DeserializeTuple8<T1, T2, T3, T4, T5, T6, T7, T8>(Type expected, IDeserializationContext context)
+        {
+            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            var item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
+            var item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
+            var item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
+            var item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
+            var item7 = (T7)SerializationManager.DeserializeInner(typeof(T7), context);
+            var rest = (T8)SerializationManager.DeserializeInner(typeof(T8), context);
+            return new Tuple<T1, T2, T3, T4, T5, T6, T7, T8>(item1, item2, item3, item4, item5, item6, item7, rest);
         }
 
         internal static void SerializeValueTuple(object raw, ISerializationContext context, Type expected)
@@ -1451,9 +1496,8 @@ namespace Orleans.Serialization
 
         internal static object DeepCopyValueTuple1<T1>(object original, ICopyContext context)
         {
-            var input = (ValueTuple<T1>)original;
-            var result = new ValueTuple<T1>((T1)SerializationManager.DeepCopyInner(input.Item1, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
             return result;
         }
 
@@ -1465,17 +1509,16 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple1<T1>(Type expected, IDeserializationContext context)
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            return new ValueTuple<T1>(item1);
+            ValueTuple<T1> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            return result;
         }
 
         internal static object DeepCopyValueTuple2<T1, T2>(object original, ICopyContext context)
         {
-            var input = (ValueTuple<T1, T2>)original;
-            var result = new ValueTuple<T1, T2>(
-                (T1)SerializationManager.DeepCopyInner(input.Item1, context), 
-                (T2)SerializationManager.DeepCopyInner(input.Item2, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1, T2>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
+            result.Item2 = DeepCopyInner(result.Item2, context);
             return result;
         }
 
@@ -1488,19 +1531,18 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple2<T1, T2>(Type expected, IDeserializationContext context)
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
-            return new ValueTuple<T1, T2>(item1, item2);
+            ValueTuple<T1, T2> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            result.Item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            return result;
         }
 
         internal static object DeepCopyValueTuple3<T1, T2, T3>(object original, ICopyContext context)
         {
-            var input = (ValueTuple<T1, T2, T3>)original;
-            var result = new ValueTuple<T1, T2, T3>(
-                (T1)SerializationManager.DeepCopyInner(input.Item1, context), 
-                (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1, T2, T3>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
+            result.Item2 = DeepCopyInner(result.Item2, context);
+            result.Item3 = DeepCopyInner(result.Item3, context);
             return result;
         }
 
@@ -1514,21 +1556,20 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple3<T1, T2, T3>(Type expected, IDeserializationContext context)
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
-            var item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
-            return new ValueTuple<T1, T2, T3>(item1, item2, item3);
+            ValueTuple<T1, T2, T3> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            result.Item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            result.Item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
+            return result;
         }
 
         internal static object DeepCopyValueTuple4<T1, T2, T3, T4>(object original, ICopyContext context)
         {
-            var input = (ValueTuple<T1, T2, T3, T4>)original;
-            var result = new ValueTuple<T1, T2, T3, T4>(
-                (T1)SerializationManager.DeepCopyInner(input.Item1, context), 
-                (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1, T2, T3, T4>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
+            result.Item2 = DeepCopyInner(result.Item2, context);
+            result.Item3 = DeepCopyInner(result.Item3, context);
+            result.Item4 = DeepCopyInner(result.Item4, context);
             return result;
         }
 
@@ -1543,23 +1584,22 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple4<T1, T2, T3, T4>(Type expected, IDeserializationContext context)
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
-            var item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
-            var item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
-            return new ValueTuple<T1, T2, T3, T4>(item1, item2, item3, item4);
+            ValueTuple<T1, T2, T3, T4> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            result.Item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            result.Item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
+            result.Item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
+            return result;
         }
 
         internal static object DeepCopyValueTuple5<T1, T2, T3, T4, T5>(object original, ICopyContext context)
         {
-            var input = (ValueTuple<T1, T2, T3, T4, T5>)original;
-            var result = new ValueTuple<T1, T2, T3, T4, T5>(
-                (T1)SerializationManager.DeepCopyInner(input.Item1, context), 
-                (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context),
-                (T5)SerializationManager.DeepCopyInner(input.Item5, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1, T2, T3, T4, T5>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
+            result.Item2 = DeepCopyInner(result.Item2, context);
+            result.Item3 = DeepCopyInner(result.Item3, context);
+            result.Item4 = DeepCopyInner(result.Item4, context);
+            result.Item5 = DeepCopyInner(result.Item5, context);
             return result;
         }
 
@@ -1575,25 +1615,24 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple5<T1, T2, T3, T4, T5>(Type expected, IDeserializationContext context)
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
-            var item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
-            var item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
-            var item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
-            return new ValueTuple<T1, T2, T3, T4, T5>(item1, item2, item3, item4, item5);
+            ValueTuple<T1, T2, T3, T4, T5> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            result.Item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            result.Item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
+            result.Item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
+            result.Item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
+            return result;
         }
 
         internal static object DeepCopyValueTuple6<T1, T2, T3, T4, T5, T6>(object original, ICopyContext context)
         {
-            var input = (ValueTuple<T1, T2, T3, T4, T5, T6>)original;
-            var result = new ValueTuple<T1, T2, T3, T4, T5, T6>(
-                (T1)SerializationManager.DeepCopyInner(input.Item1, context), 
-                (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context),
-                (T5)SerializationManager.DeepCopyInner(input.Item5, context),
-                (T6)SerializationManager.DeepCopyInner(input.Item6, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1, T2, T3, T4, T5, T6>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
+            result.Item2 = DeepCopyInner(result.Item2, context);
+            result.Item3 = DeepCopyInner(result.Item3, context);
+            result.Item4 = DeepCopyInner(result.Item4, context);
+            result.Item5 = DeepCopyInner(result.Item5, context);
+            result.Item6 = DeepCopyInner(result.Item6, context);
             return result;
         }
 
@@ -1610,27 +1649,26 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple6<T1, T2, T3, T4, T5, T6>(Type expected, IDeserializationContext context)
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
-            var item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
-            var item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
-            var item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
-            var item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
-            return new ValueTuple<T1, T2, T3, T4, T5, T6>(item1, item2, item3, item4, item5, item6);
+            ValueTuple<T1, T2, T3, T4, T5, T6> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            result.Item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            result.Item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
+            result.Item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
+            result.Item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
+            result.Item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
+            return result;
         }
 
         internal static object DeepCopyValueTuple7<T1, T2, T3, T4, T5, T6, T7>(object original, ICopyContext context)
         {
-            var input = (ValueTuple<T1, T2, T3, T4, T5, T6, T7>)original;
-            var result = new ValueTuple<T1, T2, T3, T4, T5, T6, T7>(
-                (T1)SerializationManager.DeepCopyInner(input.Item1, context), 
-                (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context),
-                (T5)SerializationManager.DeepCopyInner(input.Item5, context),
-                (T6)SerializationManager.DeepCopyInner(input.Item6, context),
-                (T7)SerializationManager.DeepCopyInner(input.Item7, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1, T2, T3, T4, T5, T6, T7>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
+            result.Item2 = DeepCopyInner(result.Item2, context);
+            result.Item3 = DeepCopyInner(result.Item3, context);
+            result.Item4 = DeepCopyInner(result.Item4, context);
+            result.Item5 = DeepCopyInner(result.Item5, context);
+            result.Item6 = DeepCopyInner(result.Item6, context);
+            result.Item7 = DeepCopyInner(result.Item7, context);
             return result;
         }
 
@@ -1648,29 +1686,28 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple7<T1, T2, T3, T4, T5, T6, T7>(Type expected, IDeserializationContext context)
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
-            var item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
-            var item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
-            var item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
-            var item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
-            var item7 = (T7)SerializationManager.DeserializeInner(typeof(T7), context);
-            return new ValueTuple<T1, T2, T3, T4, T5, T6, T7>(item1, item2, item3, item4, item5, item6, item7);
+            ValueTuple<T1, T2, T3, T4, T5, T6, T7> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            result.Item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            result.Item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
+            result.Item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
+            result.Item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
+            result.Item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
+            result.Item7 = (T7)SerializationManager.DeserializeInner(typeof(T7), context);
+            return result;
         }
 
         internal static object DeepCopyValueTuple8<T1, T2, T3, T4, T5, T6, T7, T8>(object original, ICopyContext context) where T8 : struct
         {
-            var input = (ValueTuple<T1, T2, T3, T4, T5, T6, T7, T8>)original;
-            var result = new ValueTuple<T1, T2, T3, T4, T5, T6, T7, T8>(
-                (T1)SerializationManager.DeepCopyInner(input.Item1, context), 
-                (T2)SerializationManager.DeepCopyInner(input.Item2, context),
-                (T3)SerializationManager.DeepCopyInner(input.Item3, context),
-                (T4)SerializationManager.DeepCopyInner(input.Item4, context),
-                (T5)SerializationManager.DeepCopyInner(input.Item5, context),
-                (T6)SerializationManager.DeepCopyInner(input.Item6, context),
-                (T7)SerializationManager.DeepCopyInner(input.Item7, context),
-                (T8)SerializationManager.DeepCopyInner(input.Rest, context));
-            context.RecordCopy(original, result);
+            var result = (ValueTuple<T1, T2, T3, T4, T5, T6, T7, T8>)original;
+            result.Item1 = DeepCopyInner(result.Item1, context);
+            result.Item2 = DeepCopyInner(result.Item2, context);
+            result.Item3 = DeepCopyInner(result.Item3, context);
+            result.Item4 = DeepCopyInner(result.Item4, context);
+            result.Item5 = DeepCopyInner(result.Item5, context);
+            result.Item6 = DeepCopyInner(result.Item6, context);
+            result.Item7 = DeepCopyInner(result.Item7, context);
+            result.Rest = DeepCopyInner(result.Rest, context);
             return result;
         }
 
@@ -1689,15 +1726,16 @@ namespace Orleans.Serialization
 
         internal static object DeserializeValueTuple8<T1, T2, T3, T4, T5, T6, T7, T8>(Type expected, IDeserializationContext context) where T8 : struct
         {
-            var item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
-            var item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
-            var item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
-            var item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
-            var item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
-            var item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
-            var item7 = (T7)SerializationManager.DeserializeInner(typeof(T7), context);
-            var rest = (T8)SerializationManager.DeserializeInner(typeof(T8), context);
-            return new ValueTuple<T1, T2, T3, T4, T5, T6, T7, T8>(item1, item2, item3, item4, item5, item6, item7, rest);
+            ValueTuple<T1, T2, T3, T4, T5, T6, T7, T8> result;
+            result.Item1 = (T1)SerializationManager.DeserializeInner(typeof(T1), context);
+            result.Item2 = (T2)SerializationManager.DeserializeInner(typeof(T2), context);
+            result.Item3 = (T3)SerializationManager.DeserializeInner(typeof(T3), context);
+            result.Item4 = (T4)SerializationManager.DeserializeInner(typeof(T4), context);
+            result.Item5 = (T5)SerializationManager.DeserializeInner(typeof(T5), context);
+            result.Item6 = (T6)SerializationManager.DeserializeInner(typeof(T6), context);
+            result.Item7 = (T7)SerializationManager.DeserializeInner(typeof(T7), context);
+            result.Rest = (T8)SerializationManager.DeserializeInner(typeof(T8), context);
+            return result;
         }
 
         internal static void SerializeGenericKeyValuePair(object original, ISerializationContext context, Type expected)
@@ -1737,14 +1775,7 @@ namespace Orleans.Serialization
         internal static object CopyKeyValuePair<TK, TV>(object original, ICopyContext context)
         {
             var pair = (KeyValuePair<TK, TV>)original;
-            if (typeof(TK).IsOrleansShallowCopyable() && typeof(TV).IsOrleansShallowCopyable())
-            {
-                return pair;    // KeyValuePair is a struct, so there's already been a copy at this point
-            }
-
-            var result = new KeyValuePair<TK, TV>((TK)SerializationManager.DeepCopyInner(pair.Key, context), (TV)SerializationManager.DeepCopyInner(pair.Value, context));
-            context.RecordCopy(original, result);
-            return result;
+            return new KeyValuePair<TK, TV>(DeepCopyInner(pair.Key, context), DeepCopyInner(pair.Value, context));
         }
 
         internal static void SerializeGenericNullable(object original, ISerializationContext context, Type expected)

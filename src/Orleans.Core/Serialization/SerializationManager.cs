@@ -624,7 +624,6 @@ namespace Orleans.Serialization
         public static object DeepCopyInner(object original, ICopyContext context)
         {
             if (original == null) return null;
-            var sm = context.GetSerializationManager();
 
             var t = original.GetType();
             var shallow = t.IsOrleansShallowCopyable();
@@ -638,6 +637,7 @@ namespace Orleans.Serialization
 
             object copy;
 
+            var sm = context.GetSerializationManager();
             IExternalSerializer serializer;
             if (sm.TryLookupExternalSerializer(t, out serializer))
             {

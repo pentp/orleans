@@ -385,13 +385,15 @@ namespace Orleans.Serialization
         /// <param name="getUninitializedObject">The method used to get an uninitialized instance of a type.</param>
         public void CreateInstance(Type type, Local local, MethodInfo getUninitializedObject)
         {
-            var constructorInfo = type.GetConstructor(Type.EmptyTypes);
             if (type.IsValueType)
             {
                 this.LoadLocalAddress(local);
                 this.InitObject(type);
+                return;
             }
-            else if (constructorInfo != null)
+
+            var constructorInfo = type.GetConstructor(Type.EmptyTypes);
+            if (constructorInfo != null)
             {
                 // Use the default constructor.
                 this.NewObject(constructorInfo);
