@@ -9,10 +9,8 @@ namespace Orleans.Runtime
         private static bool IsVerbose(this StatisticsLevel level) => level >= StatisticsLevel.Verbose;
 
         private static bool IsVerbose2(this StatisticsLevel level) => level >= StatisticsLevel.Verbose2;
-        
-        //---------------------------//
 
-        public static bool CollectGlobalShedulerStats(this StatisticsLevel level) => level.IsVerbose();
+        //---------------------------//
 
         public static bool CollectPerWorkItemStats(this StatisticsLevel level) => level.IsVerbose2();
 
@@ -22,10 +20,6 @@ namespace Orleans.Runtime
         //--------------------------------------//
 
         public static bool CollectQueueStats(this StatisticsLevel level) => level.IsVerbose2();
-        
-        public static bool CollectDetailedThreadStatistics(this StatisticsLevel level) => level.CollectThreadTimeTrackingStats();
-
-        public static bool CollectDetailedQueueStatistics(this StatisticsLevel level) => level.CollectQueueStats();
 
         public static bool CollectThreadTimeTrackingStats(this StatisticsLevel level) => level.IsVerbose2();
 

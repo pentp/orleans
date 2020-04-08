@@ -29,7 +29,7 @@ namespace Orleans.Runtime
         }
     }
 
-    public class StatisticNames
+    public static class StatisticNames
     {
         // Networking
         public static readonly StatisticName NETWORKING_SOCKETS_SILO_CLOSED         = new StatisticName("Networking.Sockets.Silo.Closed");
@@ -96,14 +96,6 @@ namespace Orleans.Runtime
         public static readonly StatisticName MESSAGE_CENTER_SEND_QUEUE_LENGTH                   = new StatisticName("MessageCenter.SendQueueLength");
         public static readonly StatisticName MESSAGE_CENTER_RECEIVE_QUEUE_LENGTH                = new StatisticName("MessageCenter.ReceiveQueueLength");
 
-        // Queues
-        public static readonly StatisticNameFormat QUEUES_QUEUE_SIZE_AVERAGE_PER_QUEUE          = new StatisticNameFormat("Queues.QueueSize.Average.{0}");
-        public static readonly StatisticNameFormat QUEUES_QUEUE_SIZE_INSTANTANEOUS_PER_QUEUE    = new StatisticNameFormat("Queues.QueueSize.Instantaneous.{0}");
-        public static readonly StatisticNameFormat QUEUES_ENQUEUED_PER_QUEUE                    = new StatisticNameFormat("Queues.EnQueued.{0}");
-        public static readonly StatisticNameFormat QUEUES_AVERAGE_ARRIVAL_RATE_PER_QUEUE        = new StatisticNameFormat("Queues.AverageArrivalRate.RequestsPerSecond.{0}");
-        public static readonly StatisticNameFormat QUEUES_TIME_IN_QUEUE_AVERAGE_MILLIS_PER_QUEUE = new StatisticNameFormat("Queues.TimeInQueue.Average.Milliseconds.{0}");
-        public static readonly StatisticNameFormat QUEUES_TIME_IN_QUEUE_TOTAL_MILLIS_PER_QUEUE = new StatisticNameFormat("Queues.TimeInQueue.Total.Milliseconds.{0}");
-
 
         // Thread tracking
         public static readonly StatisticNameFormat THREADS_PROCESSED_REQUESTS_PER_THREAD       = new StatisticNameFormat("Thread.NumProcessedRequests.{0}");
@@ -163,10 +155,6 @@ namespace Orleans.Runtime
         public static readonly StatisticName SCHEDULER_PENDINGWORKITEMS                                 = new StatisticName("Scheduler.PendingWorkItems");
         public static readonly StatisticName SCHEDULER_WORKITEMGROUP_COUNT                              = new StatisticName("Scheduler.WorkItemGroupCount");
         public static readonly StatisticName SCHEDULER_NUM_LONG_RUNNING_TURNS                           = new StatisticName("Scheduler.NumLongRunningTurns");
-        public static readonly StatisticName SCHEDULER_NUM_LONG_QUEUE_WAIT_TIMES                        = new StatisticName("Scheduler.NumLongQueueWaitTimes");
-        //public static readonly StatisticName SCHEDULER_RUN_QUEUE_LENGTH_LEVEL_ONE                       = new StatisticName("Scheduler.RunQueueLength.LevelOne");
-        //public static readonly StatisticName SCHEDULER_RUN_QUEUE_LENGTH_LEVEL_TWO                       = new StatisticName("Scheduler.RunQueueLength.LevelTwo");
-        //public static readonly StatisticName SCHEDULER_RUN_QUEUE_LENGTH_TOTAL                           = new StatisticName("Scheduler.RunQueueLength.Total");
 
         public static readonly StatisticName SCHEDULER_ITEMS_ENQUEUED_TOTAL                             = new StatisticName("Scheduler.Items.EnQueued");
         public static readonly StatisticName SCHEDULER_ITEMS_DEQUEUED_TOTAL                             = new StatisticName("Scheduler.Items.DeQueued");

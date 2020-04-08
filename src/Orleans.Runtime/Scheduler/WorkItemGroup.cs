@@ -7,8 +7,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Orleans.Configuration;
 using Orleans.Internal;
 
 namespace Orleans.Runtime.Scheduler
@@ -16,7 +14,6 @@ namespace Orleans.Runtime.Scheduler
     [DebuggerDisplay("WorkItemGroup Name={Name} State={state}")]
     internal class WorkItemGroup : IWorkItem
     {
-        private static readonly WaitCallback ExecuteWorkItemCallback = obj => ((WorkItemGroup)obj).Execute();
         private enum WorkGroupStatus
         {
             Waiting = 0,
@@ -27,32 +24,26 @@ namespace Orleans.Runtime.Scheduler
         private readonly ILogger log;
         private readonly OrleansTaskScheduler masterScheduler;
         private WorkGroupStatus state;
-        private readonly object lockable;
-        private readonly Queue<Task> workItems;
+        private readonly object lockable = new object();
+        private readonly Queue<Task> workItems = new Queue<Task>();
 
         private long totalItemsEnQueued;    // equals total items queued, + 1
         private long totalItemsProcessed;
-        private TimeSpan totalQueuingDelay;
 
         private Task currentTask;
         private DateTime currentTaskStarted;
         private long shutdownSinceTimestamp;
         private long lastShutdownWarningTimestamp;
 
-        private readonly QueueTrackingStatistic queueTracking;
-        private readonly long quantumExpirations;
         private readonly int workItemGroupStatisticsNumber;
         private readonly CancellationToken cancellationToken;
         private readonly SchedulerStatisticsGroup schedulerStatistics;
 
-        internal ActivationTaskScheduler TaskScheduler { get; private set; }
+        internal ActivationTaskScheduler TaskScheduler { get; }
 
         public DateTime TimeQueued { get; set; }
 
-        public TimeSpan TimeSinceQueued
-        {
-            get { return Utils.Since(TimeQueued); }
-        }
+        public TimeSpan TimeSinceQueued => Utils.Since(TimeQueued);
 
         public bool IsSystemPriority => this.GrainContext is SystemTarget systemTarget && !systemTarget.IsLowPriority;
 
@@ -75,34 +66,7 @@ namespace Orleans.Runtime.Scheduler
             }
         }
 
-        private int WorkItemCount
-        {
-            get { return workItems.Count; }
-        }
-
-        internal float AverageQueueLength
-        {
-            get
-            {
-                return 0;
-            }
-        }
-
-        internal float NumEnqueuedRequests
-        {
-            get
-            {
-                return 0;
-            }
-        }
-
-        internal float ArrivalRate
-        {
-            get
-            {
-                return 0;
-            }
-        }
+        private int WorkItemCount => workItems.Count;
 
         private bool HasWork => this.WorkItemCount != 0;
 
@@ -116,35 +80,21 @@ namespace Orleans.Runtime.Scheduler
         // per ActivationWorker. An attempt to wait when there are already too many threads waiting
         // will result in a TooManyWaitersException being thrown.
         //private static readonly int MaxWaitingThreads = 500;
-        
+
         internal WorkItemGroup(
             OrleansTaskScheduler sched,
             IGrainContext grainContext,
             ILogger<WorkItemGroup> logger,
             ILogger<ActivationTaskScheduler> activationTaskSchedulerLogger,
             CancellationToken ct,
-            SchedulerStatisticsGroup schedulerStatistics,
-            IOptions<StatisticsOptions> statisticsOptions)
+            SchedulerStatisticsGroup schedulerStatistics)
         {
             masterScheduler = sched;
             GrainContext = grainContext;
             cancellationToken = ct;
             this.schedulerStatistics = schedulerStatistics;
-            state = WorkGroupStatus.Waiting;
-            workItems = new Queue<Task>();
-            lockable = new object();
-            totalItemsEnQueued = 0;
-            totalItemsProcessed = 0;
-            totalQueuingDelay = TimeSpan.Zero;
-            quantumExpirations = 0;
             TaskScheduler = new ActivationTaskScheduler(this, activationTaskSchedulerLogger);
             log = logger;
-
-            if (schedulerStatistics.CollectShedulerQueuesStats)
-            {
-                queueTracking = new QueueTrackingStatistic("Scheduler." + this.Name, statisticsOptions);
-                queueTracking.OnStartExecution();
-            }
 
             if (schedulerStatistics.CollectPerWorkItemStats)
             {
@@ -320,9 +270,6 @@ namespace Orleans.Runtime.Scheduler
 
                 if (this.schedulerStatistics.CollectPerWorkItemStats)
                     this.schedulerStatistics.UnRegisterWorkItemGroup(workItemGroupStatisticsNumber);
-
-                if (this.schedulerStatistics.CollectShedulerQueuesStats)
-                    queueTracking.OnStopExecution();
             }
         }
 
@@ -469,21 +416,12 @@ namespace Orleans.Runtime.Scheduler
             {
                 var sb = new StringBuilder();
                 sb.Append(this);
-                sb.AppendFormat(". Currently QueuedWorkItems={0}; Total EnQueued={1}; Total processed={2}; Quantum expirations={3}; ",
-                    WorkItemCount, totalItemsEnQueued, totalItemsProcessed, quantumExpirations);
+                sb.AppendFormat(". Currently QueuedWorkItems={0}; Total EnQueued={1}; Total processed={2}; ",
+                    WorkItemCount, totalItemsEnQueued, totalItemsProcessed);
                 if (CurrentTask is Task task)
                 {
                     sb.AppendFormat(" Executing Task Id={0} Status={1} for {2}.",
                         task.Id, task.Status, Utils.Since(currentTaskStarted));
-                }
-
-                if (AverageQueueLength > 0)
-                {
-                    sb.AppendFormat("average queue length at enqueue: {0}; ", AverageQueueLength);
-                    if (!totalQueuingDelay.Equals(TimeSpan.Zero) && totalItemsProcessed > 0)
-                    {
-                        sb.AppendFormat("average queue delay: {0}ms; ", totalQueuingDelay.Divide(totalItemsProcessed).TotalMilliseconds);
-                    }
                 }
 
                 sb.AppendFormat("TaskRunner={0}; ", TaskScheduler);
@@ -501,6 +439,10 @@ namespace Orleans.Runtime.Scheduler
                 return sb.ToString();
             }
         }
+
+#if !NETCOREAPP
+        private static readonly WaitCallback ExecuteWorkItemCallback = obj => ((WorkItemGroup)obj).Execute();
+#endif
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ScheduleExecution(WorkItemGroup workItem)

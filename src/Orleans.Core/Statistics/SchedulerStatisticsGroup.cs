@@ -34,7 +34,6 @@ namespace Orleans.Runtime
             }
 
             NumLongRunningTurns = CounterStatistic.FindOrCreate(StatisticNames.SCHEDULER_NUM_LONG_RUNNING_TURNS);
-            NumLongQueueWaitTimes = CounterStatistic.FindOrCreate(StatisticNames.SCHEDULER_NUM_LONG_QUEUE_WAIT_TIMES);
         }
 
         public bool CollectShedulerQueuesStats { get; }
@@ -44,8 +43,6 @@ namespace Orleans.Runtime
         public bool CollectTurnsStats { get; }
 
         public CounterStatistic NumLongRunningTurns { get; }
-
-        public CounterStatistic NumLongQueueWaitTimes { get; }
 
         internal int RegisterWorkItemGroup(string workItemGroupName, IGrainContext context, Func<string> statusGetter)
         {
@@ -59,7 +56,7 @@ namespace Orleans.Runtime
                     Array.Resize(ref turnsExecutedPerWorkItemGroup, 2 * turnsExecutedPerWorkItemGroup.Length);
                     Array.Resize(ref workItemGroupStatuses, 2 * workItemGroupStatuses.Length);
                 }
-                CounterStorage storage =  ReportPerWorkItemStats(context) ? CounterStorage.LogAndTable : CounterStorage.DontStore;
+                CounterStorage storage = ReportPerWorkItemStats(context) ? CounterStorage.LogAndTable : CounterStorage.DontStore;
                 turnsExecutedPerWorkItemGroup[i] = CounterStatistic.FindOrCreate(new StatisticName(StatisticNames.SCHEDULER_ACTIVATION_TURNSEXECUTED_PERACTIVATION, workItemGroupName), storage);
                 workItemGroupStatuses[i] = StringValueStatistic.FindOrCreate(new StatisticName(StatisticNames.SCHEDULER_ACTIVATION_STATUS_PERACTIVATION, workItemGroupName), statusGetter, storage);
                 return i;
@@ -81,7 +78,7 @@ namespace Orleans.Runtime
 
             Utils.SafeExecute(() => StringValueStatistic.Delete(workItemGroupStatuses[workItemGroup].Name),
                 logger,
-                () => String.Format("SchedulerStatisticsGroup.UnRegisterWorkItemGroup({0})", workItemGroupStatuses[workItemGroup].Name));  
+                () => String.Format("SchedulerStatisticsGroup.UnRegisterWorkItemGroup({0})", workItemGroupStatuses[workItemGroup].Name));
         }
     }
 }

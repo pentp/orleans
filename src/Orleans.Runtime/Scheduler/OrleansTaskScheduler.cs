@@ -13,30 +13,25 @@ namespace Orleans.Runtime.Scheduler
 {
     internal class OrleansTaskScheduler
     {
-        private static readonly Action<IWorkItem> ExecuteWorkItemAction = workItem => workItem.Execute();
-        private static readonly WaitCallback ExecuteWorkItemCallback = obj => ((IWorkItem)obj).Execute();
         private readonly ILogger logger;
         private readonly SchedulerStatisticsGroup schedulerStatistics;
-        private readonly IOptions<StatisticsOptions> statisticsOptions;
         private readonly ConcurrentDictionary<IGrainContext, WorkItemGroup> workgroupDirectory;
         private readonly ILogger<WorkItemGroup> workItemGroupLogger;
         private readonly ILogger<ActivationTaskScheduler> activationTaskSchedulerLogger;
         private readonly CancellationTokenSource cancellationTokenSource;
         private bool applicationTurnsStopped;
-        
+
         internal static TimeSpan TurnWarningLengthThreshold { get; set; }
 
         // This is the maximum number of pending work items for a single activation before we write a warning log.
         internal int MaxPendingItemsSoftLimit { get; private set; }
-                
+
         public OrleansTaskScheduler(
             IOptions<SchedulingOptions> options,
             ILoggerFactory loggerFactory,
-            SchedulerStatisticsGroup schedulerStatistics,
-            IOptions<StatisticsOptions> statisticsOptions)
+            SchedulerStatisticsGroup schedulerStatistics)
         {
             this.schedulerStatistics = schedulerStatistics;
-            this.statisticsOptions = statisticsOptions;
             this.logger = loggerFactory.CreateLogger<OrleansTaskScheduler>();
             this.workItemGroupLogger = loggerFactory.CreateLogger<WorkItemGroup>();
             this.activationTaskSchedulerLogger = loggerFactory.CreateLogger<ActivationTaskScheduler>();
@@ -47,17 +42,8 @@ namespace Orleans.Runtime.Scheduler
             this.MaxPendingItemsSoftLimit = options.Value.MaxPendingWorkItemsSoftLimit;
             this.StoppedWorkItemGroupWarningInterval = options.Value.StoppedActivationWarningInterval;
             workgroupDirectory = new ConcurrentDictionary<IGrainContext, WorkItemGroup>();
-                        
+
             IntValueStatistic.FindOrCreate(StatisticNames.SCHEDULER_WORKITEMGROUP_COUNT, () => WorkItemGroupCount);
-
-            if (!schedulerStatistics.CollectShedulerQueuesStats) return;
-
-            FloatValueStatistic.FindOrCreate(new StatisticName(StatisticNames.QUEUES_QUEUE_SIZE_AVERAGE_PER_QUEUE, "Scheduler.LevelTwo.Average"), () => AverageRunQueueLengthLevelTwo);
-            FloatValueStatistic.FindOrCreate(new StatisticName(StatisticNames.QUEUES_ENQUEUED_PER_QUEUE, "Scheduler.LevelTwo.Average"), () => AverageEnqueuedLevelTwo);
-            FloatValueStatistic.FindOrCreate(new StatisticName(StatisticNames.QUEUES_AVERAGE_ARRIVAL_RATE_PER_QUEUE, "Scheduler.LevelTwo.Average"), () => AverageArrivalRateLevelTwo);
-            FloatValueStatistic.FindOrCreate(new StatisticName(StatisticNames.QUEUES_QUEUE_SIZE_AVERAGE_PER_QUEUE, "Scheduler.LevelTwo.Sum"), () => SumRunQueueLengthLevelTwo);
-            FloatValueStatistic.FindOrCreate(new StatisticName(StatisticNames.QUEUES_ENQUEUED_PER_QUEUE, "Scheduler.LevelTwo.Sum"), () => SumEnqueuedLevelTwo);
-            FloatValueStatistic.FindOrCreate(new StatisticName(StatisticNames.QUEUES_AVERAGE_ARRIVAL_RATE_PER_QUEUE, "Scheduler.LevelTwo.Sum"), () => SumArrivalRateLevelTwo);
         }
 
         public int WorkItemGroupCount => workgroupDirectory.Count;
@@ -65,63 +51,6 @@ namespace Orleans.Runtime.Scheduler
         public TimeSpan StoppedWorkItemGroupWarningInterval { get; }
 
         public SchedulingOptions SchedulingOptions { get; }
-
-        private float AverageRunQueueLengthLevelTwo
-        {
-            get
-            {
-                if (workgroupDirectory.IsEmpty) 
-                    return 0;
-
-                return (float)workgroupDirectory.Values.Sum(workgroup => workgroup.AverageQueueLength) / (float)workgroupDirectory.Values.Count;
-            }
-        }
-
-        private float AverageEnqueuedLevelTwo
-        {
-            get
-            {
-                if (workgroupDirectory.IsEmpty) 
-                    return 0;
-
-                return (float)workgroupDirectory.Values.Sum(workgroup => workgroup.NumEnqueuedRequests) / (float)workgroupDirectory.Values.Count;
-            }
-        }
-
-        private float AverageArrivalRateLevelTwo
-        {
-            get
-            {
-                if (workgroupDirectory.IsEmpty) 
-                    return 0;
-
-                return (float)workgroupDirectory.Values.Sum(workgroup => workgroup.ArrivalRate) / (float)workgroupDirectory.Values.Count;
-            }
-        }
-
-        private float SumRunQueueLengthLevelTwo
-        {
-            get
-            {
-                return (float)workgroupDirectory.Values.Sum(workgroup => workgroup.AverageQueueLength);
-            }
-        }
-
-        private float SumEnqueuedLevelTwo
-        {
-            get
-            {
-                return (float)workgroupDirectory.Values.Sum(workgroup => workgroup.NumEnqueuedRequests);
-            }
-        }
-
-        private float SumArrivalRateLevelTwo
-        {
-            get
-            {
-                return (float)workgroupDirectory.Values.Sum(workgroup => workgroup.ArrivalRate);
-            }
-        }
 
         public void StopApplicationTurns()
         {
@@ -155,8 +84,14 @@ namespace Orleans.Runtime.Scheduler
             cancellationTokenSource.Cancel();
         }
 
+#if NETCOREAPP
         private static readonly Action<Action> ExecuteActionCallback = obj => obj.Invoke();
+        private static readonly Action<IWorkItem> ExecuteWorkItemAction = workItem => workItem.Execute();
+#else
         private static readonly WaitCallback ExecuteAction = obj => ((Action)obj).Invoke();
+        private static readonly WaitCallback ExecuteWorkItemCallback = obj => ((IWorkItem)obj).Execute();
+#endif
+
         public void QueueAction(Action action, IGrainContext context)
         {
 #if DEBUG
@@ -237,8 +172,7 @@ namespace Orleans.Runtime.Scheduler
                 this.workItemGroupLogger,
                 this.activationTaskSchedulerLogger,
                 this.cancellationTokenSource.Token,
-                this.schedulerStatistics,
-                this.statisticsOptions);
+                this.schedulerStatistics);
 
 
             if (context is SystemTarget systemTarget)
@@ -252,7 +186,7 @@ namespace Orleans.Runtime.Scheduler
             }
 
             workgroupDirectory.TryAdd(context, wg);
-            
+
             return wg;
         }
 
@@ -330,7 +264,7 @@ namespace Orleans.Runtime.Scheduler
 
             var stats = Utils.EnumerableToString(workgroupDirectory.Values.OrderBy(wg => wg.Name), wg => string.Format("--{0}", wg.DumpStatus()), Environment.NewLine);
             if (stats.Length > 0)
-                logger.Info(ErrorCode.SchedulerStatistics, 
+                logger.Info(ErrorCode.SchedulerStatistics,
                     "OrleansTaskScheduler.PrintStatistics(): WorkItems={0}, Directory:" + Environment.NewLine + "{1}", WorkItemGroupCount, stats);
         }
 
@@ -354,7 +288,7 @@ namespace Orleans.Runtime.Scheduler
 
             foreach (var workgroup in workgroupDirectory.Values)
                 sb.AppendLine(workgroup.DumpStatus());
-            
+
             logger.Info(ErrorCode.SchedulerStatus, sb.ToString());
         }
     }
