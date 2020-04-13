@@ -29,9 +29,4 @@
     <PackageReference Include="Microsoft.Azure.Storage.Blob" Version="$(MicrosoftAzureStorageBlobVersion)" />
     <PackageReference Include="Microsoft.Azure.Storage.Queue" Version="$(MicrosoftAzureStorageQueueVersion)" />
   </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Storage\" />
-    <Folder Include="Utilities\" />
-  </ItemGroup>
 </Project>
