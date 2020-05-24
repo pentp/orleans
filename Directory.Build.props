@@ -91,6 +91,7 @@
     <MicrosoftExtensionsHostingVersion>3.0.0</MicrosoftExtensionsHostingVersion>
 
     <MicrosoftApplicationInsightsVersion>2.4.0</MicrosoftApplicationInsightsVersion>
+    <MicrosoftAzureDocumentDBVersion>2.1.3</MicrosoftAzureDocumentDBVersion>
     <MicrosoftAzureCosmosTableVersion>1.0.5</MicrosoftAzureCosmosTableVersion>
     <MicrosoftAzureEventHubsVersion>4.1.0</MicrosoftAzureEventHubsVersion>
     <MicrosoftAzureStorageBlobVersion>11.1.0</MicrosoftAzureStorageBlobVersion>
@@ -158,6 +159,7 @@
     <OrleansAdoNetVersion>2.3.0</OrleansAdoNetVersion>
     <OrleansAWSVersion>2.3.0</OrleansAWSVersion>
     <OrleansAzureClusteringVersion>2.3.0</OrleansAzureClusteringVersion>
+    <OrleansAzureCosmosVersion>2.3.0</OrleansAzureCosmosVersion>
     <OrleansAzureStreamingVersion>2.3.0</OrleansAzureStreamingVersion>
     <OrleansAzureEventHubsVersion>2.3.0</OrleansAzureEventHubsVersion>
     <OrleansAzurePersistenceVersion>2.3.0</OrleansAzurePersistenceVersion>
@@ -188,6 +190,7 @@
     <OrleansAdoNetVersion>$(VersionPrefix)</OrleansAdoNetVersion>
     <OrleansAWSVersion>$(VersionPrefix)</OrleansAWSVersion>
     <OrleansAzureClusteringVersion>$(VersionPrefix)</OrleansAzureClusteringVersion>
+    <OrleansAzureCosmosVersion>$(VersionPrefix)</OrleansAzureCosmosVersion>
     <OrleansAzureStreamingVersion>$(VersionPrefix)</OrleansAzureStreamingVersion>
     <OrleansAzureEventHubsVersion>$(VersionPrefix)</OrleansAzureEventHubsVersion>
     <OrleansAzurePersistenceVersion>$(VersionPrefix)</OrleansAzurePersistenceVersion>
