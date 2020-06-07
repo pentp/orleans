@@ -2,8 +2,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Orleans.Runtime;
 
 namespace Orleans.Internal
 {
@@ -53,7 +51,7 @@ namespace Orleans.Internal
             switch (task.Status)
             {
                 case TaskStatus.RanToCompletion:
-                    return Task.FromResult((object)GetResult(task));
+                    return Task.FromResult((object)task.Result);
 
                 case TaskStatus.Faulted:
                     return TaskFromFaulted(task);
@@ -84,7 +82,7 @@ namespace Orleans.Internal
             switch (task.Status)
             {
                 case TaskStatus.RanToCompletion:
-                    return Task.FromResult((T)GetResult(task));
+                    return Task.FromResult((T)task.Result);
 
                 case TaskStatus.Faulted:
                     return TaskFromFaulted<T>(task);
@@ -137,7 +135,7 @@ namespace Orleans.Internal
         {
             return task;
         }
-        
+
         private static Task<object> TaskFromFaulted(Task task)
         {
             var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -159,58 +157,46 @@ namespace Orleans.Internal
             return completion.Task;
         }
 
-        public static async Task LogException(this Task task, ILogger logger, ErrorCode errorCode, string message)
+        /// <summary>
+        /// Unwraps the <see cref="AggregateException"/> if it just wraps an inner exception
+        /// </summary>
+        public static Exception Unwrap(this AggregateException e)
+            => e?.InnerException is null || e.InnerExceptions.Count > 1 ? e : e.InnerException;
+
+        public static Task LogException(this Task task, Action<Exception> logger)
         {
-            try
-            {
-                await task;
-            }
-            catch (Exception exc)
-            {
-                _ = task.Exception; // Observe exception
-                logger.Error(errorCode, message, exc);
-                throw;
-            }
+            task.ContinueWith((t, state) => ((Action<Exception>)state)(t.Exception.Unwrap()), logger, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+            return task;
         }
 
         // Executes an async function such as Exception is never thrown but rather always returned as a broken task.
-        public static async Task SafeExecute(Func<Task> action)
-        {
-            await action();
-        }
-
-        public static async Task ExecuteAndIgnoreException(Func<Task> action)
+        public static Task SafeExecute(Func<Task> action)
         {
             try
             {
-                await action();
+                return action() ?? Task.CompletedTask;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // dont re-throw, just eat it.
+                return Task.FromException(ex);
+            }
+        }
+
+        public static Task SafeExecute<T>(T state, Func<T, Task> action)
+        {
+            try
+            {
+                return action(state) ?? Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                return Task.FromException(ex);
             }
         }
 
         internal static String ToString(this Task t)
         {
             return t == null ? "null" : string.Format("[Id={0}, Status={1}]", t.Id, Enum.GetName(typeof(TaskStatus), t.Status));
-        }
-
-        public static void WaitWithThrow(this Task task, TimeSpan timeout)
-        {
-            if (!task.Wait(timeout))
-            {
-                throw new TimeoutException($"Task.WaitWithThrow has timed out after {timeout}.");
-            }
-        }
-
-        internal static T WaitForResultWithThrow<T>(this Task<T> task, TimeSpan timeout)
-        {
-            if (!task.Wait(timeout))
-            {
-                throw new TimeoutException($"Task<T>.WaitForResultWithThrow has timed out after {timeout}.");
-            }
-            return task.Result;
         }
 
         /// <summary>
@@ -285,28 +271,6 @@ namespace Orleans.Internal
         /// </summary>
         /// <param name="taskToComplete">The task to wait for unless cancelled</param>
         /// <param name="cancellationToken">A cancellation token for cancelling the wait</param>
-        /// <param name="message">Message to set in the exception</param>
-        /// <returns></returns>
-        internal static async Task WithCancellation(
-            this Task taskToComplete,
-            CancellationToken cancellationToken,
-            string message)
-        {
-            try
-            {
-                await taskToComplete.WithCancellation(cancellationToken);
-            }
-            catch (TaskCanceledException ex)
-            {
-                throw new TaskCanceledException(message, ex);
-            }
-        }
-
-        /// <summary>
-        /// For making an uncancellable task cancellable, by ignoring its result.
-        /// </summary>
-        /// <param name="taskToComplete">The task to wait for unless cancelled</param>
-        /// <param name="cancellationToken">A cancellation token for cancelling the wait</param>
         /// <returns></returns>
         internal static Task WithCancellation(this Task taskToComplete, CancellationToken cancellationToken)
         {
@@ -316,6 +280,7 @@ namespace Orleans.Internal
             }
             else if (cancellationToken.IsCancellationRequested)
             {
+                taskToComplete.Ignore();
                 return Task.FromCanceled<object>(cancellationToken);
             }
             else
@@ -327,8 +292,7 @@ namespace Orleans.Internal
         private static async Task MakeCancellable(Task task, CancellationToken cancellationToken)
         {
             var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using (cancellationToken.Register(() =>
-                      tcs.TrySetCanceled(cancellationToken), useSynchronizationContext: false))
+            using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
             {
                 var firstToComplete = await Task.WhenAny(task, tcs.Task).ConfigureAwait(false);
 
@@ -356,9 +320,10 @@ namespace Orleans.Internal
             }
             else if (cancellationToken.IsCancellationRequested)
             {
+                taskToComplete.Ignore();
                 return Task.FromCanceled<T>(cancellationToken);
             }
-            else 
+            else
             {
                 return MakeCancellable(taskToComplete, cancellationToken);
             }
@@ -367,8 +332,7 @@ namespace Orleans.Internal
         private static async Task<T> MakeCancellable<T>(Task<T> task, CancellationToken cancellationToken)
         {
             var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using (cancellationToken.Register(() =>
-                      tcs.TrySetCanceled(cancellationToken), useSynchronizationContext: false))
+            using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
             {
                 var firstToComplete = await Task.WhenAny(task, tcs.Task).ConfigureAwait(false);
 
@@ -379,26 +343,6 @@ namespace Orleans.Internal
 
                 return await firstToComplete.ConfigureAwait(false);
             }
-        }
-
-        internal static Task WrapInTask(Action action)
-        {
-            try
-            {
-                action();
-                return Task.CompletedTask;
-            }
-            catch (Exception exc)
-            {
-                return Task.FromException<object>(exc);
-            }
-        }
-
-        //The rationale for GetAwaiter().GetResult() instead of .Result
-        //is presented at https://github.com/aspnet/Security/issues/59.      
-        internal static T GetResult<T>(this Task<T> task)
-        {
-            return task.GetAwaiter().GetResult();
         }
 
         internal static Task WhenCancelled(this CancellationToken token)
@@ -416,6 +360,61 @@ namespace Orleans.Internal
             }, waitForCancellation);
 
             return waitForCancellation.Task;
+        }
+
+        internal static Task WhenCancelled(this CancellationToken token, TimeSpan delay)
+        {
+            return token.IsCancellationRequested ? Task.Delay(delay)
+                : token.CanBeCanceled ? Task.WhenAll(Task.Delay(delay), token.WhenCancelled())
+                : Task.Delay(-1);
+        }
+
+        /// <summary>
+        /// Returns an awaitable that suppresses exceptions, but still observes them.
+        /// </summary>
+        public static IgnoreExceptionsAwaiter IgnoreExceptions(this Task task) => new(task);
+
+        /// <summary>
+        /// Returns an awaitable that suppresses exceptions.
+        /// </summary>
+        public static SuppressExceptionsAwaiter SuppressExceptions(this Task task) => new(task);
+
+        /// <summary>
+        /// Returns an awaitable that suppresses exceptions and runs continuations on the default scheduler.
+        /// </summary>
+        public static SuppressExceptionsCfgAwaiter SuppressExceptionsAndContext(this Task task) => new(task);
+
+        public readonly struct IgnoreExceptionsAwaiter : ICriticalNotifyCompletion
+        {
+            private readonly Task _task;
+            public IgnoreExceptionsAwaiter(Task task) => _task = task;
+            public IgnoreExceptionsAwaiter GetAwaiter() => this;
+            public bool IsCompleted => _task.IsCompleted;
+            public void OnCompleted(Action action) => _task.GetAwaiter().OnCompleted(action);
+            public void UnsafeOnCompleted(Action action) => _task.GetAwaiter().UnsafeOnCompleted(action);
+            public void GetResult() => _ = _task.Exception;
+        }
+
+        public readonly struct SuppressExceptionsAwaiter : ICriticalNotifyCompletion
+        {
+            private readonly Task _task;
+            public SuppressExceptionsAwaiter(Task task) => _task = task;
+            public SuppressExceptionsAwaiter GetAwaiter() => this;
+            public bool IsCompleted => _task.IsCompleted;
+            public void OnCompleted(Action action) => _task.GetAwaiter().OnCompleted(action);
+            public void UnsafeOnCompleted(Action action) => _task.GetAwaiter().UnsafeOnCompleted(action);
+            public Task GetResult() => _task;
+        }
+
+        public readonly struct SuppressExceptionsCfgAwaiter : ICriticalNotifyCompletion
+        {
+            private readonly Task _task;
+            public SuppressExceptionsCfgAwaiter(Task task) => _task = task;
+            public SuppressExceptionsCfgAwaiter GetAwaiter() => this;
+            public bool IsCompleted => _task.IsCompleted;
+            public void OnCompleted(Action action) => _task.ConfigureAwait(false).GetAwaiter().OnCompleted(action);
+            public void UnsafeOnCompleted(Action action) => _task.ConfigureAwait(false).GetAwaiter().UnsafeOnCompleted(action);
+            public Task GetResult() => _task;
         }
     }
 }

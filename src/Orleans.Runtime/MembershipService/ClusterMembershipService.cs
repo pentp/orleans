@@ -100,19 +100,21 @@ namespace Orleans.Runtime
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var tasks = new List<Task>(1);
-            var cancellation = new CancellationTokenSource();
+            CancellationTokenSource cancellation = null;
+            var task = Task.CompletedTask;
+
             Task OnRuntimeInitializeStart(CancellationToken _)
             {
-                tasks.Add(Task.Run(() => this.ProcessMembershipUpdates(cancellation.Token)));
+                cancellation = new CancellationTokenSource();
+                task = Task.Run(() => this.ProcessMembershipUpdates(cancellation.Token));
                 return Task.CompletedTask;
             }
 
-            async Task OnRuntimeInitializeStop(CancellationToken ct)
+            Task OnRuntimeInitializeStop(CancellationToken ct)
             {
-                cancellation.Cancel(throwOnFirstException: false);
-                var shutdownGracePeriod = Task.WhenAll(Task.Delay(ClusterMembershipOptions.ClusteringShutdownGracePeriod), ct.WhenCancelled());
-                await Task.WhenAny(shutdownGracePeriod, Task.WhenAll(tasks));
+                cancellation?.Cancel();
+                var shutdownGracePeriod = ct.WhenCancelled(delay: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
+                return Task.WhenAny(shutdownGracePeriod, task);
             }
 
             lifecycle.Subscribe(

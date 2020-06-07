@@ -29,28 +29,28 @@ namespace Orleans.Runtime.MembershipService
 
         public Task Ping(int pingNumber) => Task.CompletedTask;
 
-        public async Task SiloStatusChangeNotification(SiloAddress updatedSilo, SiloStatus status)
+        public Task SiloStatusChangeNotification(SiloAddress updatedSilo, SiloStatus status)
         {
             if (this.log.IsEnabled(LogLevel.Trace))
             {
                 this.log.LogTrace("-Received GOSSIP SiloStatusChangeNotification about {Silo} status {Status}. Going to read the table.", updatedSilo, status);
             }
 
-            await ReadTable();
+            return ReadTable();
         }
 
-        public async Task MembershipChangeNotification(MembershipTableSnapshot snapshot)
+        public Task MembershipChangeNotification(MembershipTableSnapshot snapshot)
         {
             if (snapshot.Version != MembershipVersion.MinValue)
             {
-                await this.membershipTableManager.RefreshFromSnapshot(snapshot);
+                return this.membershipTableManager.RefreshFromSnapshot(snapshot);
             }
             else
             {
                 if (this.log.IsEnabled(LogLevel.Trace))
                     this.log.LogTrace("-Received GOSSIP MembershipChangeNotification with MembershipVersion.MinValue. Going to read the table");
 
-                await ReadTable();
+                return ReadTable();
             }
         }
 
@@ -120,7 +120,7 @@ namespace Orleans.Runtime.MembershipService
             SiloAddress updatedSilo,
             SiloStatus updatedStatus)
         {
-            async Task Gossip()
+            Task Gossip()
             {
                 var tasks = new List<Task>(gossipPartners.Count);
                 foreach (var silo in gossipPartners)
@@ -128,7 +128,7 @@ namespace Orleans.Runtime.MembershipService
                     tasks.Add(this.GossipToRemoteSilo(silo, snapshot, updatedSilo, updatedStatus));
                 }
 
-                await Task.WhenAll(tasks);
+                return Task.WhenAll(tasks);
             }
 
             return this.ScheduleTask(Gossip);

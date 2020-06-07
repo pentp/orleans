@@ -303,11 +303,11 @@ namespace Orleans.Runtime.MembershipService
             
             try
             {
-                Func<int, Task<bool>> updateMyStatusTask = async counter =>
+                Func<int, Task<bool>> updateMyStatusTask = counter =>
                 {
                     numCalls++;
                     if (log.IsEnabled(LogLevel.Debug)) log.Debug("-Going to try to TryUpdateMyStatusGlobalOnce #{0}", counter);
-                    return await TryUpdateMyStatusGlobalOnce(status);  // function to retry
+                    return TryUpdateMyStatusGlobalOnce(status);  // function to retry
                 };
                 
                 if (status == SiloStatus.Dead && this.membershipTableProvider is SystemTargetBasedMembershipTable)
@@ -846,7 +846,7 @@ namespace Orleans.Runtime.MembershipService
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var tasks = new List<Task>(1);
+            var task = Task.CompletedTask;
             lifecycle.Subscribe(
                 nameof(MembershipTableManager),
                 ServiceLifecycleStage.RuntimeGrainServices,
@@ -855,17 +855,17 @@ namespace Orleans.Runtime.MembershipService
 
             async Task OnRuntimeGrainServicesStart(CancellationToken ct)
             {
-                await Task.Run(() => this.Start());
-                tasks.Add(Task.Run(() => this.PeriodicallyRefreshMembershipTable()));
+                await Task.Run(this.Start);
+                task = Task.Run(this.PeriodicallyRefreshMembershipTable);
             }
 
-            async Task OnRuntimeGrainServicesStop(CancellationToken ct)
+            Task OnRuntimeGrainServicesStop(CancellationToken ct)
             {
                 this.membershipUpdateTimer.Dispose();
 
                 // Allow some minimum time for graceful shutdown.
-                var gracePeriod = Task.WhenAll(Task.Delay(ClusterMembershipOptions.ClusteringShutdownGracePeriod), ct.WhenCancelled());
-                await Task.WhenAny(gracePeriod, Task.WhenAll(tasks));
+                var gracePeriod = ct.WhenCancelled(delay: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
+                return Task.WhenAny(gracePeriod, task);
             }
         }
 

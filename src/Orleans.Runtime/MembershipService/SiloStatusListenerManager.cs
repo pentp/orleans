@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
-using Microsoft.Extensions.Logging;
-using System.Threading.Tasks;
-using System.Threading;
 using System.Collections.Immutable;
-using Orleans.Runtime.Utilities;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Orleans.Internal;
 
 namespace Orleans.Runtime.MembershipService
@@ -15,7 +14,6 @@ namespace Orleans.Runtime.MembershipService
     internal class SiloStatusListenerManager : ILifecycleParticipant<ISiloLifecycle>
     {
         private readonly object listenersLock = new object();
-        private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
         private readonly MembershipTableManager membershipTableManager;
         private readonly ILogger<SiloStatusListenerManager> log;
         private readonly IFatalErrorHandler fatalErrorHandler;
@@ -72,13 +70,13 @@ namespace Orleans.Runtime.MembershipService
             }
         }
 
-        private async Task ProcessMembershipUpdates()
+        private async Task ProcessMembershipUpdates(CancellationToken ct)
         {
             ClusterMembershipSnapshot previous = default;
             try
             {
                 if (this.log.IsEnabled(LogLevel.Debug)) this.log.LogDebug("Starting to process membership updates");
-                await foreach (var tableSnapshot in this.membershipTableManager.MembershipTableUpdates.WithCancellation(this.cancellation.Token))
+                await foreach (var tableSnapshot in this.membershipTableManager.MembershipTableUpdates.WithCancellation(ct))
                 {
                     var snapshot = tableSnapshot.CreateClusterMembershipSnapshot();
 
@@ -142,21 +140,23 @@ namespace Orleans.Runtime.MembershipService
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var tasks = new List<Task>();
+            var task = Task.CompletedTask;
+            CancellationTokenSource cancellation = null;
 
             lifecycle.Subscribe(nameof(SiloStatusListenerManager), ServiceLifecycleStage.AfterRuntimeGrainServices, OnStart, _ => Task.CompletedTask);
             lifecycle.Subscribe(nameof(SiloStatusListenerManager), ServiceLifecycleStage.RuntimeInitialize, _ => Task.CompletedTask, OnStop);
 
             Task OnStart(CancellationToken ct)
             {
-                tasks.Add(Task.Run(() => this.ProcessMembershipUpdates()));
+                cancellation = new CancellationTokenSource();
+                task = Task.Run(() => this.ProcessMembershipUpdates(cancellation.Token));
                 return Task.CompletedTask;
             }
 
             Task OnStop(CancellationToken ct)
             {
-                this.cancellation.Cancel(throwOnFirstException: false);
-                return Task.WhenAny(ct.WhenCancelled(), Task.WhenAll(tasks));
+                cancellation?.Cancel();
+                return Task.WhenAny(ct.WhenCancelled(), task);
             }
         }
     }

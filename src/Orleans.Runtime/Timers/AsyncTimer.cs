@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Orleans.Internal;
 
 namespace Orleans.Runtime
 {
@@ -36,43 +37,27 @@ namespace Orleans.Runtime
             if (cancellation.IsCancellationRequested) return false;
 
             var start = DateTime.UtcNow;
-            TimeSpan delay;
-            if (overrideDelay.HasValue)
-            {
-                delay = overrideDelay.Value;
-            }
-            else
-            {
-                if (this.lastFired == DateTime.MinValue)
-                {
-                    delay = this.period;
-                }
-                else
-                {
-                    delay = this.lastFired.Add(this.period).Subtract(start);
-                }
-            }
+            var delay = overrideDelay ?? (lastFired.Ticks == 0 ? period : lastFired + period - start);
+            if (delay.Ticks < 0) delay = default;
 
-            if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
-
-            var dueTime = start.Add(delay);
+            var dueTime = start + delay;
             this.expected = dueTime;
-            if (delay > TimeSpan.Zero)
+            if (delay.Ticks > 0)
             {
                 // for backwards compatibility, support timers with periods up to ReminderRegistry.MaxSupportedTimeout
-                var maxDelay = TimeSpan.FromMilliseconds(int.MaxValue);
-                while (delay > maxDelay)
+                var maxDelay = TimeSpan.FromTicks(int.MaxValue * TimeSpan.TicksPerMillisecond);
+                var maxWait = false;
+                if (delay > maxDelay)
                 {
                     delay -= maxDelay;
-                    var task2 = await Task.WhenAny(Task.Delay(maxDelay, cancellation.Token)).ConfigureAwait(false);
-                    if (task2.IsCanceled)
-                    {
-                        await Task.Yield();
-                        return false;
-                    }
+                    maxWait = true;
                 }
 
-                var task = await Task.WhenAny(Task.Delay(delay, cancellation.Token)).ConfigureAwait(false);
+                var task = await Task.Delay(delay, cancellation.Token).SuppressExceptionsAndContext();
+                if (maxWait && !task.IsCanceled)
+                {
+                    task = await Task.Delay(int.MaxValue, cancellation.Token).SuppressExceptionsAndContext();
+                }
                 if (task.IsCanceled)
                 {
                     await Task.Yield();

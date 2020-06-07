@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Xml;
 using Microsoft.Extensions.Logging;
+using Orleans.Internal;
 using Orleans.Metadata;
 using Orleans.Runtime.MembershipService;
 using Orleans.Versions;
@@ -81,15 +81,14 @@ namespace Orleans.Runtime.Management
         {
             var silos = GetSiloAddresses(siloAddresses);
             logger.Info("Forcing garbage collection on {0}", Utils.EnumerableToString(silos));
-            List<Task> actionPromises = PerformPerSiloAction(silos,
-                s => GetSiloControlReference(s).ForceGarbageCollection());
-            return Task.WhenAll(actionPromises);
+            return Task.WhenAll(silos.Select(s =>
+                GetSiloControlReference(s).ForceGarbageCollection()));
         }
 
         public Task ForceActivationCollection(SiloAddress[] siloAddresses, TimeSpan ageLimit)
         {
             var silos = GetSiloAddresses(siloAddresses);
-            return Task.WhenAll(GetSiloAddresses(silos).Select(s =>
+            return Task.WhenAll(silos.Select(s =>
                 GetSiloControlReference(s).ForceActivationCollection(ageLimit)));
         }
 
@@ -104,29 +103,23 @@ namespace Orleans.Runtime.Management
         {
             var silos = GetSiloAddresses(siloAddresses);
             logger.Info("Forcing runtime statistics collection on {0}", Utils.EnumerableToString(silos));
-            List<Task> actionPromises = PerformPerSiloAction(
-                silos,
-                s => GetSiloControlReference(s).ForceRuntimeStatisticsCollection());
-            return Task.WhenAll(actionPromises);
+            return Task.WhenAll(silos.Select(s =>
+                GetSiloControlReference(s).ForceRuntimeStatisticsCollection()));
         }
 
         public Task<SiloRuntimeStatistics[]> GetRuntimeStatistics(SiloAddress[] siloAddresses)
         {
             var silos = GetSiloAddresses(siloAddresses);
             if (logger.IsEnabled(LogLevel.Debug)) logger.Debug("GetRuntimeStatistics on {0}", Utils.EnumerableToString(silos));
-            var promises = new List<Task<SiloRuntimeStatistics>>();
-            foreach (SiloAddress siloAddress in silos)
-                promises.Add(GetSiloControlReference(siloAddress).GetRuntimeStatistics());
-
-            return Task.WhenAll(promises);
+            return Task.WhenAll(silos.Select(s =>
+                GetSiloControlReference(s).GetRuntimeStatistics()));
         }
 
         public async Task<SimpleGrainStatistic[]> GetSimpleGrainStatistics(SiloAddress[] hostsIds)
         {
-            var all = GetSiloAddresses(hostsIds).Select(s =>
-                GetSiloControlReference(s).GetSimpleGrainStatistics()).ToList();
-            await Task.WhenAll(all);
-            return all.SelectMany(s => s.Result).ToArray();
+            var res = await Task.WhenAll(GetSiloAddresses(hostsIds).Select(s =>
+                GetSiloControlReference(s).GetSimpleGrainStatistics()));
+            return res.SelectMany(s => s).ToArray();
         }
 
         public async Task<SimpleGrainStatistic[]> GetSimpleGrainStatistics()
@@ -144,68 +137,47 @@ namespace Orleans.Runtime.Management
                 hostsIds = hosts.Keys.ToArray();
             }
 
-            var all = GetSiloAddresses(hostsIds).Select(s =>
-              GetSiloControlReference(s).GetDetailedGrainStatistics(types)).ToList();
-            await Task.WhenAll(all);
-            return all.SelectMany(s => s.Result).ToArray();
+            var res = await Task.WhenAll(GetSiloAddresses(hostsIds).Select(s =>
+                GetSiloControlReference(s).GetDetailedGrainStatistics(types)));
+            return res.SelectMany(s => s).ToArray();
         }
 
         public async Task<int> GetGrainActivationCount(GrainReference grainReference)
         {
-            Dictionary<SiloAddress, SiloStatus> hosts = await GetHosts(true);
-            List<SiloAddress> hostsIds = hosts.Keys.ToList();
-            var tasks = new List<Task<DetailedGrainReport>>();
-            foreach (var silo in hostsIds)
-                tasks.Add(GetSiloControlReference(silo).GetDetailedGrainReport(grainReference.GrainId));
+            var hosts = await GetHosts(true);
+            var res = await Task.WhenAll(hosts.Select(s =>
+                GetSiloControlReference(s.Key).GetDetailedGrainReport(grainReference.GrainId)));
 
-            await Task.WhenAll(tasks);
-            return tasks.Select(s => s.Result).Select(r => r.LocalActivations.Count).Sum();
+            return res.Sum(r => r.LocalActivations.Count);
         }
 
-        public async Task SetCompatibilityStrategy(CompatibilityStrategy strategy)
+        public Task SetCompatibilityStrategy(CompatibilityStrategy strategy)
         {
-            await SetStrategy(
-                store => store.SetCompatibilityStrategy(strategy),
-                siloControl => siloControl.SetCompatibilityStrategy(strategy));
+            return SetStrategy(strategy, (t, s) => t.SetCompatibilityStrategy(s));
         }
 
-        public async Task SetSelectorStrategy(VersionSelectorStrategy strategy)
+        public Task SetSelectorStrategy(VersionSelectorStrategy strategy)
         {
-            await SetStrategy(
-                store => store.SetSelectorStrategy(strategy),
-                siloControl => siloControl.SetSelectorStrategy(strategy));
+            return SetStrategy(strategy, (t, s) => t.SetSelectorStrategy(s));
         }
 
-        public async Task SetCompatibilityStrategy(GrainInterfaceType interfaceType, CompatibilityStrategy strategy)
+        public Task SetCompatibilityStrategy(GrainInterfaceType interfaceType, CompatibilityStrategy strategy)
         {
             CheckIfIsExistingInterface(interfaceType);
-            await SetStrategy(
-                store => store.SetCompatibilityStrategy(interfaceType, strategy),
-                siloControl => siloControl.SetCompatibilityStrategy(interfaceType, strategy));
+            return SetStrategy(strategy, (t, s) => t.SetCompatibilityStrategy(interfaceType, s));
         }
 
-        public async Task SetSelectorStrategy(GrainInterfaceType interfaceType, VersionSelectorStrategy strategy)
+        public Task SetSelectorStrategy(GrainInterfaceType interfaceType, VersionSelectorStrategy strategy)
         {
             CheckIfIsExistingInterface(interfaceType);
-            await SetStrategy(
-                store => store.SetSelectorStrategy(interfaceType, strategy),
-                siloControl => siloControl.SetSelectorStrategy(interfaceType, strategy));
+            return SetStrategy(strategy, (t, s) => t.SetSelectorStrategy(interfaceType, s));
         }
 
         public async Task<int> GetTotalActivationCount()
         {
-            Dictionary<SiloAddress, SiloStatus> hosts = await GetHosts(true);
-            List<SiloAddress> silos = hosts.Keys.ToList();
-            var tasks = new List<Task<int>>();
-            foreach (var silo in silos)
-                tasks.Add(GetSiloControlReference(silo).GetActivationCount());
-
-            await Task.WhenAll(tasks);
-            int sum = 0;
-            foreach (Task<int> task in tasks)
-                sum += task.Result;
-
-            return sum;
+            var hosts = await GetHosts(true);
+            var res = await Task.WhenAll(hosts.Select(s => GetSiloControlReference(s.Key).GetActivationCount()));
+            return res.Sum();
         }
 
         public Task<object[]> SendControlCommandToProvider(string providerTypeFullName, string providerName, int command, object arg)
@@ -279,22 +251,18 @@ namespace Orleans.Runtime.Management
             }
         }
 
-        private async Task SetStrategy(Func<IVersionStore, Task> storeFunc, Func<ISiloControl, Task> applyFunc)
+        private async Task SetStrategy<T>(T strategy, Func<IVersionManager, T, Task> func)
         {
-            await storeFunc(versionStore);
+            await func(versionStore, strategy);
             var silos = GetSiloAddresses(null);
-            var actionPromises = PerformPerSiloAction(
-                silos,
-                s => applyFunc(GetSiloControlReference(s)));
-            try
+            var actionPromises = new List<Task>();
+            foreach (var s in silos)
             {
-                await Task.WhenAll(actionPromises);
+                actionPromises.Add(func(GetSiloControlReference(s), strategy));
             }
-            catch (Exception)
-            {
-                // ignored: silos that failed to set the new strategy will reload it from the storage
-                // in the future.
-            }
+            var task = await Task.WhenAll(actionPromises).SuppressExceptions();
+            // exceptions ignored: silos that failed to set the new strategy will reload it from the storage in the future.
+            _ = task.Exception;
         }
 
         private async Task<object[]> ExecutePerSiloCall(Func<ISiloControl, Task<object>> action, string actionToLog)
@@ -320,25 +288,6 @@ namespace Orleans.Runtime.Management
 
             return this.siloStatusOracle
                        .GetApproximateSiloStatuses(true).Keys.ToArray();
-        }
-
-        /// <summary>
-        /// Perform an action for each silo.
-        /// </summary>
-        /// <remarks>
-        /// Because SiloControl contains a reference to a system target, each method call using that reference
-        /// will get routed either locally or remotely to the appropriate silo instance auto-magically.
-        /// </remarks>
-        /// <param name="siloAddresses">List of silos to perform the action for</param>
-        /// <param name="perSiloAction">The action function to be performed for each silo</param>
-        /// <returns>Array containing one Task for each silo the action was performed for</returns>
-        private List<Task> PerformPerSiloAction(SiloAddress[] siloAddresses, Func<SiloAddress, Task> perSiloAction)
-        {
-            var requestsToSilos = new List<Task>();
-            foreach (SiloAddress siloAddress in siloAddresses)
-                requestsToSilos.Add(perSiloAction(siloAddress));
-
-            return requestsToSilos;
         }
 
         private ISiloControl GetSiloControlReference(SiloAddress silo)

@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using Microsoft.Extensions.Logging;
-using Orleans.Configuration;
-using System.Threading.Tasks;
-using System.Threading;
-using Microsoft.Extensions.Options;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Orleans.Configuration;
 using Orleans.Internal;
 
 namespace Orleans.Runtime.MembershipService
@@ -15,7 +15,6 @@ namespace Orleans.Runtime.MembershipService
     /// </summary>
     internal class MembershipAgent : IHealthCheckParticipant, ILifecycleParticipant<ISiloLifecycle>, IDisposable, MembershipAgent.ITestAccessor
     {
-        private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
         private readonly MembershipTableManager tableManager;
         private readonly ILocalSiloDetails localSilo;
         private readonly IFatalErrorHandler fatalErrorHandler;
@@ -298,7 +297,7 @@ namespace Orleans.Runtime.MembershipService
             catch (Exception exc)
             {
                 this.log.Error(ErrorCode.MembershipFailedToShutdown, "Error updating status to ShuttingDown", exc);
-                throw;
+                // result not observed
             }
         }
 
@@ -332,13 +331,13 @@ namespace Orleans.Runtime.MembershipService
                     (int)ErrorCode.MembershipFailedToKillMyself,
                     "Failure updating status to " + nameof(SiloStatus.Dead) + ": {Exception}",
                     exception);
-                throw;
+                // result not observed
             }
         }
 
-        private async Task UpdateStatus(SiloStatus status)
+        private Task UpdateStatus(SiloStatus status)
         {
-            await this.tableManager.UpdateStatus(status);
+            return this.tableManager.UpdateStatus(status);
         }
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
@@ -346,12 +345,11 @@ namespace Orleans.Runtime.MembershipService
             {
                 Task OnRuntimeInitializeStart(CancellationToken ct) => Task.CompletedTask;
 
-                async Task OnRuntimeInitializeStop(CancellationToken ct)
+                Task OnRuntimeInitializeStop(CancellationToken ct)
                 {
                     this.iAmAliveTimer.Dispose();
-                    this.cancellation.Cancel();
-                    await Task.WhenAny(
-                        Task.Run(() => this.BecomeDead()),
+                    return Task.WhenAny(
+                        Task.Run(this.BecomeDead),
                         Task.Delay(TimeSpan.FromMinutes(1)));
                 }
 
@@ -363,52 +361,47 @@ namespace Orleans.Runtime.MembershipService
             }
 
             {
-                async Task AfterRuntimeGrainServicesStart(CancellationToken ct)
+                Task AfterRuntimeGrainServicesStart(CancellationToken ct)
                 {
-                    await Task.Run(() => this.BecomeJoining());
+                    return Task.Run(this.BecomeJoining);
                 }
-
-                Task AfterRuntimeGrainServicesStop(CancellationToken ct) => Task.CompletedTask;
 
                 lifecycle.Subscribe(
                     nameof(MembershipAgent),
                     ServiceLifecycleStage.AfterRuntimeGrainServices,
-                    AfterRuntimeGrainServicesStart,
-                    AfterRuntimeGrainServicesStop);
+                    AfterRuntimeGrainServicesStart);
             }
 
             {
-                var tasks = new List<Task>();
+                var task = Task.CompletedTask;
 
                 async Task OnBecomeActiveStart(CancellationToken ct)
                 {
-                    await Task.Run(() => this.BecomeActive());
-                    tasks.Add(Task.Run(() => this.UpdateIAmAlive()));
+                    await Task.Run(this.BecomeActive);
+                    task = Task.Run(this.UpdateIAmAlive);
                 }
 
                 async Task OnBecomeActiveStop(CancellationToken ct)
                 {
                     this.iAmAliveTimer.Dispose();
-                    this.cancellation.Cancel(throwOnFirstException: false);
-                    var cancellationTask = ct.WhenCancelled();
 
                     if (ct.IsCancellationRequested)
                     {
-                        await Task.Run(() => this.BecomeStopping());
+                        await Task.Run(this.BecomeStopping);
                     }
                     else
                     {
                         // Allow some minimum time for graceful shutdown.
-                        var gracePeriod = Task.WhenAll(Task.Delay(ClusterMembershipOptions.ClusteringShutdownGracePeriod), cancellationTask);
-                        var task = await Task.WhenAny(gracePeriod, this.BecomeShuttingDown());
-                        if (ReferenceEquals(task, gracePeriod))
+                        var gracePeriod = ct.WhenCancelled(delay: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
+                        var shutdown = Task.Run(this.BecomeShuttingDown);
+                        if (gracePeriod == await Task.WhenAny(gracePeriod, shutdown))
                         {
                             this.log.LogWarning("Graceful shutdown aborted: starting ungraceful shutdown");
-                            await Task.Run(() => this.BecomeStopping());
+                            await Task.Run(this.BecomeStopping);
                         }
                         else
                         {
-                            await Task.WhenAny(gracePeriod, Task.WhenAll(tasks));
+                            await Task.WhenAny(gracePeriod, task);
                         }
                     }
                 }

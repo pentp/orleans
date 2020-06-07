@@ -89,11 +89,11 @@ namespace Orleans.GrainDirectory.AzureStorage
                 await this.tableDataManager.DeleteTableEntryAsync(GrainDirectoryEntity.FromGrainAddress(this.clusterId, address), entity.ETag);
         }
 
-        public async Task UnregisterMany(List<GrainAddress> addresses)
+        public Task UnregisterMany(List<GrainAddress> addresses)
         {
             if (addresses.Count <= this.tableDataManager.StoragePolicyOptions.MaxBulkUpdateRows)
             {
-                await UnregisterManyBlock(addresses);
+                return UnregisterManyBlock(addresses);
             }
             else
             {
@@ -102,7 +102,7 @@ namespace Orleans.GrainDirectory.AzureStorage
                 {
                     tasks.Add(UnregisterManyBlock(subList));
                 }
-                await Task.WhenAll(tasks);
+                return Task.WhenAll(tasks);
             }
         }
 
@@ -136,9 +136,9 @@ namespace Orleans.GrainDirectory.AzureStorage
         }
 
         // Called by lifecycle, should not be called explicitely, except for tests
-        public async Task InitializeIfNeeded(CancellationToken ct = default)
+        public Task InitializeIfNeeded(CancellationToken ct = default)
         {
-            await this.tableDataManager.InitTableAsync();
+            return this.tableDataManager.InitTableAsync();
         }
 
         public void Participate(ISiloLifecycle lifecycle)

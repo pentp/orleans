@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Orleans.CodeGeneration;
@@ -75,9 +74,7 @@ namespace Orleans
                 }
                 catch (Exception exception)
                 {
-                    var completion = new TaskCompletionSource<object>();
-                    completion.TrySetException(exception);
-                    return completion.Task;
+                    return Task.FromException(exception);
                 }
             }
 

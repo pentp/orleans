@@ -1,10 +1,9 @@
 using System;
-using System.Collections.Generic;
-using Orleans.Configuration;
-using System.Threading.Tasks;
 using System.Threading;
-using Microsoft.Extensions.Options;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Orleans.Configuration;
 using Orleans.Internal;
 
 namespace Orleans.Runtime.MembershipService
@@ -92,19 +91,20 @@ namespace Orleans.Runtime.MembershipService
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var tasks = new List<Task>();
+            var task = Task.CompletedTask;
             lifecycle.Subscribe(nameof(MembershipTableCleanupAgent), ServiceLifecycleStage.Active, OnStart, OnStop);
 
             Task OnStart(CancellationToken ct)
             {
-                tasks.Add(Task.Run(() => this.CleanupDefunctSilos()));
+                task = Task.Run(this.CleanupDefunctSilos);
                 return Task.CompletedTask;
             }
 
-            async Task OnStop(CancellationToken ct)
+            Task OnStop(CancellationToken ct)
             {
                 this.cleanupDefunctSilosTimer?.Dispose();
-                await Task.WhenAny(ct.WhenCancelled(), Task.WhenAll(tasks));
+                task.Ignore();
+                return Task.WhenAny(ct.WhenCancelled(), task);
             }
         }
 

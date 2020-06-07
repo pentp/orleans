@@ -198,11 +198,11 @@ namespace Orleans.AzureUtils
             await DeleteEntriesBatch(entriesList);
         }
 
-        private async Task DeleteEntriesBatch(List<Tuple<SiloInstanceTableEntry, string>> entriesList)
+        private Task DeleteEntriesBatch(List<Tuple<SiloInstanceTableEntry, string>> entriesList)
         {
             if (entriesList.Count <= this.storagePolicyOptions.MaxBulkUpdateRows)
             {
-                await storage.DeleteTableEntriesAsync(entriesList);
+                return storage.DeleteTableEntriesAsync(entriesList);
             }
             else
             {
@@ -211,7 +211,7 @@ namespace Orleans.AzureUtils
                 {
                     tasks.Add(storage.DeleteTableEntriesAsync(batch));
                 }
-                await Task.WhenAll(tasks);
+                return Task.WhenAll(tasks);
             }
         }
 

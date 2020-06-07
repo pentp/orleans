@@ -142,7 +142,7 @@ namespace Orleans.Streams
         /// </summary>
         public Task QueueDistributionChangeNotification()
         {
-            return this.ScheduleTask(() => this.HandleQueueDistributionChangeNotification());
+            return this.ScheduleTask(HandleQueueDistributionChangeNotification);
         }
 
         public Task HandleQueueDistributionChangeNotification()
@@ -237,20 +237,14 @@ namespace Orleans.Streams
                 }
             }
 
-            try
+            var initTasks = new List<Task>();
+            foreach (var agent in agents)
             {
-                var initTasks = new List<Task>();
-                foreach (var agent in agents)
-                {
-                    initTasks.Add(InitAgent(agent));
-                }
-                await Task.WhenAll(initTasks);
+                initTasks.Add(InitAgent(agent));
             }
-            catch
-            {
-                // Just ignore this exception and proceed as if Initialize has succeeded.
-                // We already logged individual exceptions for individual calls to Initialize. No need to log again.
-            }
+            await Task.WhenAll(initTasks).IgnoreExceptions();
+            // We already logged individual exceptions for individual calls to Initialize. No need to log again.
+
             if (agents.Count > 0)
             {
                 Log(ErrorCode.PersistentStreamPullingManager_08, "Added {0} new queues: {1}. Now own total of {2} queues: {3}",
@@ -269,7 +263,8 @@ namespace Orleans.Streams
             IStreamFailureHandler deliveryFailureHandler = await adapterFactory.GetDeliveryFailureHandler(agent.QueueId);
             // Need to call it as a grain reference.
             var task = OrleansTaskExtentions.SafeExecute(() => agentGrainRef.Initialize(queueAdapter.AsImmutable(), queueAdapterCacheAsImmutable, deliveryFailureHandler.AsImmutable()));
-            await task.LogException(logger, ErrorCode.PersistentStreamPullingManager_09, String.Format("PersistentStreamPullingAgent {0} failed to Initialize.", agent.QueueId));
+            task = task.LogException(ex => logger.Error(ErrorCode.PersistentStreamPullingManager_09, $"PersistentStreamPullingAgent {agent.QueueId} failed to Initialize.", ex));
+            await task.SuppressExceptions();
         }
 
         private async Task RemoveQueues(List<QueueId> queuesToRemove)
@@ -291,20 +286,12 @@ namespace Orleans.Streams
                 agents.Add(agent);
                 queuesToAgentsMap.Remove(queueId);
                 var agentGrainRef = agent.AsReference<IPersistentStreamPullingAgent>();
-                var task = OrleansTaskExtentions.SafeExecute(agentGrainRef.Shutdown);
-                task = task.LogException(logger, ErrorCode.PersistentStreamPullingManager_11,
-                    String.Format("PersistentStreamPullingAgent {0} failed to Shutdown.", agent.QueueId));
+                var task = OrleansTaskExtentions.SafeExecute(agentGrainRef, g => g.Shutdown());
+                task = task.LogException(ex => logger.Error(ErrorCode.PersistentStreamPullingManager_11, $"PersistentStreamPullingAgent {agent.QueueId} failed to Shutdown.", ex));
                 removeTasks.Add(task);
             }
-            try
-            {
-                await Task.WhenAll(removeTasks);
-            }
-            catch
-            {
-                // Just ignore this exception and proceed as if Initialize has succeeded.
-                // We already logged individual exceptions for individual calls to Shutdown. No need to log again.
-            }
+            await Task.WhenAll(removeTasks).IgnoreExceptions();
+            // We already logged individual exceptions for individual calls to Shutdown. No need to log again.
 
             var catalog = ActivationServices.GetRequiredService<Catalog>();
             foreach (var agent in agents)

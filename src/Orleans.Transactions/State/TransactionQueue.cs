@@ -817,7 +817,7 @@ namespace Orleans.Transactions.State
             }
         }
 
-        private async Task AbortCommits(TransactionalStatus status, int from = 0)
+        private Task AbortCommits(TransactionalStatus status, int from = 0)
         {
             List<Task> pending = new List<Task>();
             // emtpy the back of the commit queue, starting at specified position
@@ -828,7 +828,7 @@ namespace Orleans.Transactions.State
             commitQueue.RemoveFromBack(commitQueue.Count - from);
 
             pending.Add(this.RWLock.AbortExecutingTransactions(exception: null));
-            await Task.WhenAll(pending);
+            return Task.WhenAll(pending);
         }
     }
 }

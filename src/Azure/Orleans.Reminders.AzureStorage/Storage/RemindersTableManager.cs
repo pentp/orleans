@@ -175,12 +175,12 @@ namespace Orleans.Runtime.ReminderService
             return queryResults.ToList();
         }
 
-        internal async Task<Tuple<ReminderTableEntry, string>> FindReminderEntry(GrainReference grainRef, string reminderName)
+        internal Task<Tuple<ReminderTableEntry, string>> FindReminderEntry(GrainReference grainRef, string reminderName)
         {
             string partitionKey = ReminderTableEntry.ConstructPartitionKey(ServiceId, grainRef);
             string rowKey = ReminderTableEntry.ConstructRowKey(grainRef, reminderName);
 
-            return await ReadSingleTableEntryAsync(partitionKey, rowKey);
+            return ReadSingleTableEntryAsync(partitionKey, rowKey);
         }
 
         private Task<List<Tuple<ReminderTableEntry, string>>> FindAllReminderEntries()

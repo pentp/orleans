@@ -21,11 +21,11 @@ namespace Orleans.Runtime.GrainDirectory
             logger = loggerFactory.CreateLogger($"{typeof(RemoteGrainDirectory).FullName}.CacheValidator");
         }
 
-        public async Task<AddressAndTag> RegisterAsync(ActivationAddress address, bool singleActivation, int hopCount)
+        public Task<AddressAndTag> RegisterAsync(ActivationAddress address, bool singleActivation, int hopCount)
         {
             (singleActivation ? router.RegistrationsSingleActRemoteReceived : router.RegistrationsRemoteReceived).Increment();
             
-            return await router.RegisterAsync(address, singleActivation, hopCount);
+            return router.RegisterAsync(address, singleActivation, hopCount);
         }
 
         public Task RegisterMany(List<ActivationAddress> addresses, bool singleActivation)

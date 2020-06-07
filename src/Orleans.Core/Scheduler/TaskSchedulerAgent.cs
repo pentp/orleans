@@ -64,7 +64,7 @@ namespace Orleans.Runtime
                 State = AgentState.Running;
             }
 
-            Task.Run(() => this.StartAsync()).Ignore();
+            Task.Run(this.StartAsync).Ignore();
 
             if (Log.IsEnabled(LogLevel.Debug)) Log.Debug("Started asynch agent " + this.Name);
         }

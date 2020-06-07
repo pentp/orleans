@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using Orleans.Internal;
 
 namespace Orleans
 {
@@ -9,10 +10,10 @@ namespace Orleans
     /// A utility class that provides serial execution of async functions.
     /// In can be used inside reentrant grain code to execute some methods in a non-reentrant (serial) way.
     /// </summary>
-    public class AsyncSerialExecutor<TResult>
+    public class AsyncSerialExecutor
     {
-        private readonly ConcurrentQueue<Tuple<TaskCompletionSource<TResult>, Func<Task<TResult>>>> actions = new ConcurrentQueue<Tuple<TaskCompletionSource<TResult>, Func<Task<TResult>>>>();
-        private readonly InterlockedExchangeLock locker = new InterlockedExchangeLock();
+        private readonly ConcurrentQueue<(Task<Task> Task, Task Result)> actions = new();
+        private readonly InterlockedExchangeLock locker = new();
 
         private class InterlockedExchangeLock
         {
@@ -20,15 +21,9 @@ namespace Orleans
             private const int Unlocked = 0;
             private int lockState = Unlocked;
 
-            public bool TryGetLock()
-            {
-                return Interlocked.Exchange(ref lockState, Locked) != Locked;
-            }
+            public bool TryGetLock() => Interlocked.CompareExchange(ref lockState, Locked, Unlocked) == Unlocked;
 
-            public void ReleaseLock()
-            {
-                Interlocked.Exchange(ref lockState, Unlocked);
-            }
+            public void ReleaseLock() => Volatile.Write(ref lockState, Unlocked);
         }
 
         /// <summary>
@@ -36,67 +31,47 @@ namespace Orleans
         /// Returns a promise that represents the execution of this given function. 
         /// The returned promise will be resolved when the given function is done executing.
         /// </summary>
-        /// <param name="func"></param>
-        /// <returns></returns>
-        public Task<TResult> AddNext(Func<Task<TResult>> func)
+        public Task AddNext(Func<Task> func)
         {
-            var resolver = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            actions.Enqueue(new Tuple<TaskCompletionSource<TResult>, Func<Task<TResult>>>(resolver, func));
-            Task<TResult> task = resolver.Task;
-            ExecuteNext().Ignore();
-            return task;
+            if (locker.TryGetLock())
+            {
+                if (actions.IsEmpty)
+                {
+                    var running = OrleansTaskExtentions.SafeExecute(func);
+                    _ = ExecuteNext(running);
+                    return running;
+                }
+                locker.ReleaseLock();
+            }
+
+            var task = new Task<Task>(func);
+            var unwrap = task.Unwrap();
+            actions.Enqueue((task, unwrap));
+            _ = ExecuteNext();
+            return unwrap;
         }
 
-        private async Task ExecuteNext()
+        private async Task ExecuteNext(Task running = null)
         {
-            while (!actions.IsEmpty)
-            {
-                bool gotLock = false;
+            while (running != null || locker.TryGetLock())
                 try
                 {
-                    if (!(gotLock = locker.TryGetLock()))
+                    if (running != null)
                     {
-                        return;
+                        await running.SuppressExceptions();
+                        running = null;
                     }
 
-                    while (!actions.IsEmpty)
+                    while (actions.TryDequeue(out var action))
                     {
-                        Tuple<TaskCompletionSource<TResult>, Func<Task<TResult>>> actionTuple;
-                        if (actions.TryDequeue(out actionTuple))
-                        {
-                            try
-                            {
-                                TResult result = await actionTuple.Item2();
-                                actionTuple.Item1.TrySetResult(result);
-                            }
-                            catch (Exception exc)
-                            {
-                                actionTuple.Item1.TrySetException(exc);
-                            }
-                        }
+                        action.Task.Start();
+                        await action.Result.SuppressExceptions();
                     }
                 }
                 finally
                 {
-                    if (gotLock)
-                        locker.ReleaseLock();
+                    locker.ReleaseLock();
                 }
-            }
-        }
-    }
-
-    public class AsyncSerialExecutor
-    {
-        private AsyncSerialExecutor<bool> executor = new AsyncSerialExecutor<bool>();
-
-        public Task AddNext(Func<Task> func)
-        {
-            return this.executor.AddNext(() => Wrap(func));
-        }
-        private async Task<bool> Wrap(Func<Task> func)
-        {
-            await func();
-            return true;
         }
     }
 }

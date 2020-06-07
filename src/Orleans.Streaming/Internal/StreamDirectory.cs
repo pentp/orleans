@@ -12,11 +12,11 @@ namespace Orleans.Streams
     /// </summary>
     internal class StreamDirectory : IAsyncDisposable
     {
-        private readonly ConcurrentDictionary<InternalStreamId, object> allStreams = new ConcurrentDictionary<InternalStreamId, object>();
+        private readonly ConcurrentDictionary<InternalStreamId, object> allStreams = new();
 
-        internal IAsyncStream<T> GetOrAddStream<T>(InternalStreamId streamId, Func<IAsyncStream<T>> streamCreator)
+        internal IAsyncStream<T> GetOrAddStream<T>(InternalStreamId streamId, Func<InternalStreamId, IAsyncStream<T>> streamCreator)
         {
-            var stream = allStreams.GetOrAdd(streamId, _ => streamCreator());
+            var stream = allStreams.GetOrAdd(streamId, streamCreator);
             var streamOfT = stream as IAsyncStream<T>;
             if (streamOfT == null)
             {
@@ -26,7 +26,7 @@ namespace Orleans.Streams
             return streamOfT;
         }
 
-        internal async Task Cleanup(bool cleanupProducers, bool cleanupConsumers)
+        internal Task Cleanup(bool cleanupProducers, bool cleanupConsumers)
         {
             if (StreamResourceTestControl.TestOnlySuppressStreamCleanupOnDeactivate)
             {
@@ -34,15 +34,13 @@ namespace Orleans.Streams
             }
 
             var promises = new List<Task>();
-            List<InternalStreamId> streamIds = GetUsedStreamIds();
-            foreach (InternalStreamId s in streamIds)
+            foreach (var s in allStreams)
             {
-                IStreamControl streamControl = GetStreamControl(s);
-                if (streamControl != null)
+                if (s.Value is IStreamControl streamControl)
                     promises.Add(streamControl.Cleanup(cleanupProducers, cleanupConsumers));
             }
 
-            await Task.WhenAll(promises);
+            return Task.WhenAll(promises);
         }
 
         internal void Clear()
@@ -51,18 +49,6 @@ namespace Orleans.Streams
             allStreams.Clear();
         }
 
-        private IStreamControl GetStreamControl(InternalStreamId streamId)
-        {
-            object streamObj;
-            bool ok = allStreams.TryGetValue(streamId, out streamObj);
-            return ok ? streamObj as IStreamControl : null;
-        }
-
-        private List<InternalStreamId> GetUsedStreamIds()
-        {
-            return allStreams.Select(kv => kv.Key).ToList();
-        }
-
-        public async ValueTask DisposeAsync() => await this.Cleanup(cleanupProducers: true, cleanupConsumers: false).ConfigureAwait(false);
+        public ValueTask DisposeAsync() => new(this.Cleanup(cleanupProducers: true, cleanupConsumers: false));
     }
 }
