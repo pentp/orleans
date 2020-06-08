@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 
 namespace Orleans.Metadata
@@ -7,8 +8,8 @@ namespace Orleans.Metadata
     /// <summary>
     /// Information about types which are available in the cluster.
     /// </summary>
-    [Serializable]
-    public class ClusterManifest
+    [Serializable, Immutable]
+    public sealed class ClusterManifest
     {
         /// <summary>
         /// Creates a new <see cref="ClusterManifest"/> instance.

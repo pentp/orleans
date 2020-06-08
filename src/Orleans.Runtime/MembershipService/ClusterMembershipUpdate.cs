@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Immutable;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
+    [Serializable, Immutable]
     public sealed class ClusterMembershipUpdate
     {
         public ClusterMembershipUpdate(ClusterMembershipSnapshot snapshot, ImmutableArray<ClusterMember> changes)

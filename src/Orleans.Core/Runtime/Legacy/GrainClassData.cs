@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
     /// <summary>
     /// Metadata for a grain class
     /// </summary>
-    [Serializable]
+    [Serializable, Immutable]
     internal sealed class GrainClassData
     {
         [NonSerialized]

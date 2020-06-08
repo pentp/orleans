@@ -1,9 +1,10 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Versions.Selector
 {
-    [Serializable]
-    public class MinimumVersion : VersionSelectorStrategy
+    [Serializable, Immutable]
+    public sealed class MinimumVersion : VersionSelectorStrategy
     {
         public static MinimumVersion Singleton { get; } = new MinimumVersion();
     }

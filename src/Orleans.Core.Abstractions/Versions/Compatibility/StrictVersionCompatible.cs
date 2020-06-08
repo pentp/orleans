@@ -1,9 +1,10 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Versions.Compatibility
 {
-    [Serializable]
-    public class StrictVersionCompatible : CompatibilityStrategy
+    [Serializable, Immutable]
+    public sealed class StrictVersionCompatible : CompatibilityStrategy
     {
         public static StrictVersionCompatible Singleton { get; } = new StrictVersionCompatible();
     }

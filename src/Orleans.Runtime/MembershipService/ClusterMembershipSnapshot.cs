@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Immutable;
 using System.Text;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
+    [Serializable, Immutable]
     public sealed class ClusterMembershipSnapshot
     {
         public ClusterMembershipSnapshot(ImmutableDictionary<SiloAddress, ClusterMember> members, MembershipVersion version)

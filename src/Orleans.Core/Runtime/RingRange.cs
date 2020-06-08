@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
@@ -37,8 +37,8 @@ namespace Orleans.Runtime
         uint End { get; }
     }
 
-    [Serializable]
-    internal class SingleRange : IRingRangeInternal, IEquatable<SingleRange>, ISingleRange
+    [Serializable, Immutable]
+    internal sealed class SingleRange : IRingRangeInternal, IEquatable<SingleRange>, ISingleRange
     {
         private readonly uint begin;
         private readonly uint end;
@@ -86,9 +86,9 @@ namespace Orleans.Runtime
             {
                 return end - begin;
             }
-                return RangeFactory.RING_SIZE - (begin - end);
+            return RangeFactory.RING_SIZE - (begin - end);
         }
-   
+
         public double RangePercentage()
         {
             return ((double)RangeSize() / (double)RangeFactory.RING_SIZE) * ((double)100.0);
@@ -167,8 +167,8 @@ namespace Orleans.Runtime
         }
     }
 
-    [Serializable]
-    internal class GeneralMultiRange : IRingRangeInternal
+    [Serializable, Immutable]
+    internal sealed class GeneralMultiRange : IRingRangeInternal
     {
         private readonly List<SingleRange> ranges;
         private readonly long rangeSize;
@@ -176,9 +176,9 @@ namespace Orleans.Runtime
 
         internal IEnumerable<SingleRange> Ranges { get { return ranges; } }
 
-        internal GeneralMultiRange(IEnumerable<IRingRange> inRanges)
+        internal GeneralMultiRange(List<IRingRange> inRanges)
         {
-            ranges = inRanges.Cast<SingleRange>().ToList();
+            ranges = inRanges.ConvertAll(r => (SingleRange)r);
             if (ranges.Count == 0)
             {
                 rangeSize = 0;
@@ -234,11 +234,11 @@ namespace Orleans.Runtime
         }
     }
 
-    [Serializable]
-    internal class EquallyDividedMultiRange
+    [Serializable, Immutable]
+    internal sealed class EquallyDividedMultiRange
     {
-        [Serializable]
-        private class EquallyDividedSingleRange
+        [Serializable, Immutable]
+        private sealed class EquallyDividedSingleRange
         {
             private readonly List<SingleRange> ranges;
 
@@ -246,13 +246,13 @@ namespace Orleans.Runtime
             {
                 ranges = new List<SingleRange>();
                 if (numSubRanges == 0) throw new ArgumentException("numSubRanges is 0.", "numSubRanges");
-                
+
                 if (numSubRanges == 1)
                 {
                     ranges.Add(singleRange);
                 }
                 else
-                {    
+                {
                     uint uNumSubRanges = checked((uint)numSubRanges);
                     uint portion = (uint)(singleRange.RangeSize() / uNumSubRanges);
                     uint remainder = (uint)(singleRange.RangeSize() - portion * uNumSubRanges);
@@ -261,7 +261,7 @@ namespace Orleans.Runtime
                     {
                         // (Begin, End]
                         uint end = (unchecked(start + portion));
-                            // I want it to overflow on purpose. It will do the right thing.
+                        // I want it to overflow on purpose. It will do the right thing.
                         if (remainder > 0)
                         {
                             end++;

@@ -337,6 +337,12 @@ namespace Orleans.CodeGenerator
                 return;
             }
 
+            if (compilation.AssemblyName == "Orleans.Core" && HasBuiltInSerializer(type))
+            {
+                if (this.log.IsEnabled(LogLevel.Trace)) this.log.LogTrace($"{nameof(ProcessSerializableType)} skipping built in type {type}");
+                return;
+            }
+
             // Account for types that serialize themselves and/or are serializers for other types.
             var selfSerializing = false;
             if (this.serializerTypeAnalyzer.IsSerializer(type, out var serializerTargets))
@@ -453,6 +459,19 @@ namespace Orleans.CodeGenerator
             {
                 this.log.LogTrace($"{nameof(ProcessSerializableType)} will not generate a serializer for type {type}");
             }
+        }
+
+        private bool HasBuiltInSerializer(INamedTypeSymbol type)
+        {
+            var c = SymbolEqualityComparer.Default;
+            return c.Equals(type, wellKnownTypes.InvokeMethodRequest)
+                || c.Equals(type, wellKnownTypes.ActivationId)
+                || c.Equals(type, wellKnownTypes.ActivationAddress)
+                || c.Equals(type, wellKnownTypes.GrainId)
+                || c.Equals(type, wellKnownTypes.SiloAddress)
+                || c.Equals(type, compilation.GetTypeByMetadataName("Orleans.Runtime.CorrelationId"))
+                || c.Equals(type, compilation.GetTypeByMetadataName("Orleans.Runtime.Response"))
+                || c.Equals(type.ConstructedFrom, wellKnownTypes.Immutable_1);
         }
 
         private static void AddKnownType(AggregatedModel model, INamedTypeSymbol type)

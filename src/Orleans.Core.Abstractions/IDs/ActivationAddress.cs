@@ -1,13 +1,14 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    internal class ActivationAddress
+    [Serializable, Immutable]
+    internal sealed class ActivationAddress
     {
-        public GrainId Grain { get; private set; }
-        public ActivationId Activation { get; private set; }
-        public SiloAddress Silo { get; private set; }
+        public GrainId Grain { get; }
+        public ActivationId Activation { get; }
+        public SiloAddress Silo { get; }
 
         public bool IsComplete
         {

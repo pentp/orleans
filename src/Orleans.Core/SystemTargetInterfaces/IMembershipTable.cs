@@ -108,9 +108,8 @@ namespace Orleans
     {
     }
 
-    [Serializable]
-    [Immutable]
-    public class TableVersion
+    [Serializable, Immutable]
+    public sealed class TableVersion
     {
         /// <summary>
         /// The version part of this TableVersion. Monotonically increasing number.
@@ -293,7 +292,7 @@ namespace Orleans
         /// the last time this silo reported that it is alive. For diagnostics and troubleshooting only.
         /// </summary>
         public DateTime IAmAliveTime { get; set; }
-        
+
         public void AddSuspector(SiloAddress suspectingSilo, DateTime suspectingTime)
         {
             if (SuspectTimes == null)

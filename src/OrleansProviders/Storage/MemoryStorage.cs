@@ -134,7 +134,7 @@ namespace Orleans.Storage
     /// <summary>
     /// Factory for creating MemoryGrainStorage
     /// </summary>
-    public class MemoryGrainStorageFactory
+    public static class MemoryGrainStorageFactory
     {
         public static IGrainStorage Create(IServiceProvider services, string name)
         {

@@ -347,8 +347,7 @@ namespace Orleans.CodeGenerator.Generators
             var originalVariable = IdentifierName("original");
 
             var body = new List<StatementSyntax>();
-            if (type.HasAttribute(wellKnownTypes.ImmutableAttribute)
-                || SymbolEqualityComparer.Default.Equals(wellKnownTypes.Immutable_1, type))
+            if (type.HasAttribute(wellKnownTypes.ImmutableAttribute))
             {
                 // Immutable types do not require copying.
                 var typeName = type.ToDisplayString();
@@ -372,6 +371,20 @@ namespace Orleans.CodeGenerator.Generators
                 {
                     var comment = Comment($"// {type.ToDisplayString()} needs only a shallow copy.");
                     body.Add(ReturnStatement(inputVariable).WithLeadingTrivia(comment));
+                }
+                else if (type.IsValueType && !type.GetMembers().Any(m => !m.IsStatic && m is IFieldSymbol f && !ShouldSerializeField(f)))
+                {
+                    // If there aren't any nonserialized fields, then can update the struct in-place
+                    var context = IdentifierName("context");
+
+                    // Assign copies for members that are not shallow-copyable
+                    foreach (var field in fields)
+                    {
+                        if (!IsOrleansShallowCopyable(field.SafeType))
+                            body.Add(ExpressionStatement(field.GetSetter(inputVariable, field.GetGetter(inputVariable, context))));
+                    }
+
+                    body.Add(ReturnStatement(inputVariable));
                 }
                 else
                 {
@@ -480,7 +493,7 @@ namespace Orleans.CodeGenerator.Generators
                 // Use the default value.
                 result = DefaultExpression(type.ToTypeSyntax());
             }
-            else if (GetEmptyConstructor(type, model) != null)
+            else if (HasEmptyConstructor(type, model))
             {
                 // Use the default constructor.
                 result = ObjectCreationExpression(type.ToTypeSyntax()).AddArgumentListArguments();
@@ -501,10 +514,12 @@ namespace Orleans.CodeGenerator.Generators
         /// <summary>
         /// Return the default constructor on <paramref name="type"/> if found or null if not found.
         /// </summary>
-        private IMethodSymbol GetEmptyConstructor(INamedTypeSymbol type, SemanticModel model)
+        private bool HasEmptyConstructor(INamedTypeSymbol type, SemanticModel model)
         {
-            return type.GetDeclaredInstanceMembers<IMethodSymbol>()
-                .FirstOrDefault(method => method.MethodKind == MethodKind.Constructor && method.Parameters.Length == 0 && model.IsAccessible(0, method));
+            foreach (var m in type.GetMembers(WellKnownMemberNames.InstanceConstructorName))
+                if (m is IMethodSymbol method && method.Parameters.Length == 0 && model.IsAccessible(0, method))
+                    return true;
+            return false;
         }
 
         /// <summary>

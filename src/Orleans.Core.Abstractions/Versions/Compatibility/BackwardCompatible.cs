@@ -1,9 +1,10 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Versions.Compatibility
 {
-    [Serializable]
-    public class BackwardCompatible : CompatibilityStrategy
+    [Serializable, Immutable]
+    public sealed class BackwardCompatible : CompatibilityStrategy
     {
         public static BackwardCompatible Singleton { get; } = new BackwardCompatible();
     }

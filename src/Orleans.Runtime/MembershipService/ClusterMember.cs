@@ -1,8 +1,9 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
+    [Serializable, Immutable]
     public sealed class ClusterMember : IEquatable<ClusterMember>
     {
         public ClusterMember(SiloAddress siloAddress, SiloStatus status)

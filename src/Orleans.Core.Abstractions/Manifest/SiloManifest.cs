@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 
 namespace Orleans.Metadata
@@ -7,8 +8,8 @@ namespace Orleans.Metadata
     /// <summary>
     /// Information about a silo.
     /// </summary>
-    [Serializable]
-    public class SiloManifest
+    [Serializable, Immutable]
+    public sealed class SiloManifest
     {
         /// <summary>
         /// Creates a new <see cref="SiloManifest"/> instance.

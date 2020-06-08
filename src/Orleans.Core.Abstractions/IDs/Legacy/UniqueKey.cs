@@ -1,17 +1,17 @@
 using System;
-using System.Buffers.Text;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    public class UniqueKey : IComparable<UniqueKey>, IEquatable<UniqueKey>
+    [Serializable, Immutable]
+    public sealed class UniqueKey : IComparable<UniqueKey>, IEquatable<UniqueKey>
     {
         private const ulong TYPE_CODE_DATA_MASK = 0xFFFFFFFF; // Lowest 4 bytes
-        private static readonly char[] KeyExtSeparationChar = {'+'};
+        private static readonly char[] KeyExtSeparationChar = { '+' };
 
         /// <summary>
         /// Type id values encoded into UniqueKeys
@@ -63,14 +63,7 @@ namespace Orleans.Runtime
             => category == Category.KeyExtGrain
                         || category == Category.KeyExtSystemTarget;
 
-        internal static readonly UniqueKey Empty =
-            new UniqueKey
-            {
-                N0 = 0,
-                N1 = 0,
-                TypeCodeData = 0,
-                KeyExt = null
-            };
+        internal static readonly UniqueKey Empty = new UniqueKey();
 
         internal static UniqueKey Parse(ReadOnlySpan<char> input)
         {

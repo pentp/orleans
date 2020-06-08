@@ -7,7 +7,7 @@ using Orleans.Runtime;
 namespace Orleans.Streams
 {
     [Serializable]
-    internal class StreamSubscriptionHandleImpl<T> : StreamSubscriptionHandle<T>, IStreamSubscriptionHandle 
+    internal sealed class StreamSubscriptionHandleImpl<T> : StreamSubscriptionHandle<T>, IStreamSubscriptionHandle 
     {
         private StreamImpl<T> streamImpl;
         private readonly IStreamFilterPredicateWrapper filterWrapper;

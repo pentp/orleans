@@ -8,9 +8,8 @@ using Orleans.Serialization;
 
 namespace Orleans.Streams
 {
-    [Serializable]
-    [Immutable]
-    internal class StreamImpl<T> : IStreamIdentity, IAsyncStream<T>, IStreamControl, ISerializable, IOnDeserialized
+    [Serializable, Immutable]
+    internal sealed class StreamImpl<T> : IStreamIdentity, IAsyncStream<T>, IStreamControl, ISerializable, IOnDeserialized
     {
         private readonly StreamId                               streamId;
         private readonly bool                                   isRewindable;
@@ -183,7 +182,7 @@ namespace Orleans.Streams
             return o == null ? 1 : streamId.CompareTo(o.streamId);
         }
 
-        public virtual bool Equals(IAsyncStream<T> other)
+        public bool Equals(IAsyncStream<T> other)
         {
             var o = other as StreamImpl<T>;
             return o != null && streamId.Equals(o.streamId);
@@ -212,8 +211,10 @@ namespace Orleans.Streams
             info.AddValue("IsRewindable", isRewindable, typeof(bool));
         }
 
+#pragma warning disable CS0628 // New protected member declared in sealed class
         // The special constructor is used to deserialize values. 
         protected StreamImpl(SerializationInfo info, StreamingContext context)
+#pragma warning restore CS0628
         {
             // Reset the property value using the GetValue method.
             streamId = (StreamId)info.GetValue("StreamId", typeof(StreamId));

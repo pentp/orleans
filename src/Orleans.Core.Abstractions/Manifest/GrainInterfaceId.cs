@@ -1,12 +1,13 @@
 using System;
 using System.Diagnostics;
+using Orleans.Concurrency;
 
 namespace Orleans.Metadata
 {
     /// <summary>
     /// Uniquely identifies a grain interface.
     /// </summary>
-    [Serializable]
+    [Serializable, Immutable]
     [DebuggerDisplay("{Value}")]
     public readonly struct GrainInterfaceId : IEquatable<GrainInterfaceId>
     {

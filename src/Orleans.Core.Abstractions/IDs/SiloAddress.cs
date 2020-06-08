@@ -7,24 +7,17 @@ using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
     /// <summary>
     /// Data class encapsulating the details of silo addresses.
     /// </summary>
-    [Serializable]
+    [Serializable, Immutable]
     [DebuggerDisplay("SiloAddress {ToString()}")]
-    public class SiloAddress : IEquatable<SiloAddress>, IComparable<SiloAddress>, IComparable
+    public sealed class SiloAddress : IEquatable<SiloAddress>, IComparable<SiloAddress>, IComparable
     {
-        internal static readonly int SizeBytes = 24; // 16 for the address, 4 for the port, 4 for the generation
-
-        /// <summary> Special constant value to indicate an empty SiloAddress. </summary>
-        public static SiloAddress Zero { get; private set; }
-
-        private const int INTERN_CACHE_INITIAL_SIZE = InternerConstants.SIZE_MEDIUM;
-        private static readonly TimeSpan internCacheCleanupInterval = TimeSpan.Zero;
-
         private int hashCode = 0;
         private bool hashCodeSet = false;
 
@@ -36,16 +29,12 @@ namespace Orleans.Runtime
 
         private const char SEPARATOR = '@';
 
-        private static readonly DateTime epoch = new DateTime(2010, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        private static readonly long epoch = new DateTime(2010, 1, 1).Ticks;
 
-        private static readonly Interner<SiloAddress, SiloAddress> siloAddressInterningCache;
+        private static readonly Interner<SiloAddress, SiloAddress> siloAddressInterningCache = new Interner<SiloAddress, SiloAddress>(InternerConstants.SIZE_MEDIUM);
 
-        static SiloAddress()
-        {
-            siloAddressInterningCache = new Interner<SiloAddress, SiloAddress>(INTERN_CACHE_INITIAL_SIZE, internCacheCleanupInterval);
-            var sa = new SiloAddress(new IPEndPoint(0, 0), 0);
-            Zero = siloAddressInterningCache.Intern(sa, sa);
-        }
+        /// <summary> Special constant value to indicate an empty SiloAddress. </summary>
+        public static SiloAddress Zero { get; } = New(new IPEndPoint(0, 0), 0);
 
         /// <summary>
         /// Factory for creating new SiloAddresses with specified IP endpoint address and silo generation number.
@@ -77,7 +66,7 @@ namespace Orleans.Runtime
         /// <returns>A new silo generation number.</returns>
         public static int AllocateNewGeneration()
         {
-            long elapsed = (DateTime.UtcNow.Ticks - epoch.Ticks) / TimeSpan.TicksPerSecond;
+            long elapsed = (DateTime.UtcNow.Ticks - epoch) / TimeSpan.TicksPerSecond;
             return unchecked((int)elapsed); // Unchecked to truncate any bits beyond the lower 32
         }
 
@@ -304,7 +293,7 @@ namespace Orleans.Runtime
                 Buffer.BlockCopy(tmpInt, 0, bytes, offset, sizeof(int));
                 hashes.Add(JenkinsHash.ComputeHash(bytes));
             }
-            
+
             return hashes;
         }
 
@@ -399,5 +388,5 @@ namespace Orleans.Runtime
             return returnVal;
         }
 
-      }
+    }
 }

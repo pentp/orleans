@@ -3,12 +3,12 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
-using Orleans.Core;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    public class LegacyGrainId : IEquatable<LegacyGrainId>, IComparable<LegacyGrainId>
+    [Serializable, Immutable]
+    public sealed class LegacyGrainId : IEquatable<LegacyGrainId>, IComparable<LegacyGrainId>
     {
         private static readonly object lockable = new object();
         private const int INTERN_CACHE_INITIAL_SIZE = InternerConstants.SIZE_LARGE;
@@ -18,7 +18,7 @@ namespace Orleans.Runtime
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2104:DoNotDeclareReadOnlyMutableReferenceTypes")]
         [DataMember]
-        protected readonly internal UniqueKey Key;
+        internal readonly UniqueKey Key;
 
         public UniqueKey.Category Category => Key.IdCategory;
 

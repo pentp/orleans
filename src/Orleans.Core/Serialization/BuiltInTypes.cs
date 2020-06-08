@@ -2140,7 +2140,7 @@ namespace Orleans.Serialization
         {
             var resp = (Response)original;
 
-            if (resp.ExceptionFlag)
+            if (resp.Data is null)
             {
                 return original;
             }

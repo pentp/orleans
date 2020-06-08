@@ -303,10 +303,10 @@ namespace Orleans.CodeGenerator.Analysis
                     if (log.IsEnabled(LogLevel.Debug)) log.LogDebug($"Known assembly {type.ContainingAssembly} from assembly {asm}");
 
                     // Check if the attribute has the TreatTypesAsSerializable property set.
-                    var prop = attr.NamedArguments.FirstOrDefault(a => a.Key.Equals("TreatTypesAsSerializable")).Value;
-                    if (prop.Type != null)
+                    var arg = attr.NamedArguments.FirstOrDefault(a => a.Key.Equals("TreatTypesAsSerializable"));
+                    if (arg.Key != null)
                     {
-                        var treatAsSerializable = (bool)prop.Value;
+                        var treatAsSerializable = (bool)arg.Value.Value;
                         if (treatAsSerializable)
                         {
                             // When checking if a type in this assembly is serializable, always respond that it is.
@@ -338,7 +338,7 @@ namespace Orleans.CodeGenerator.Analysis
 
                         var throwOnFailure = false;
                         var throwOnFailureParam = attr.ConstructorArguments.ElementAtOrDefault(2);
-                        if (throwOnFailureParam.Type != null)
+                        if (!throwOnFailureParam.IsNull)
                         {
                             throwOnFailure = (bool)throwOnFailureParam.Value;
                             if (throwOnFailure) this.CodeGenerationRequiredTypes.Add(type);

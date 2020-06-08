@@ -1,34 +1,30 @@
 using System;
+using System.ComponentModel;
 using System.Runtime.Serialization;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    public class ActivationId : IEquatable<ActivationId>
+    [Serializable, Immutable]
+    public sealed class ActivationId : IEquatable<ActivationId>
     {
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2104:DoNotDeclareReadOnlyMutableReferenceTypes")]
         [DataMember]
-        protected readonly internal UniqueKey Key;
+        internal readonly UniqueKey Key;
 
         public bool IsSystem { get { return Key.IsSystemTargetKey; } }
 
-        public static readonly ActivationId Zero;
+        private static readonly Interner<UniqueKey, ActivationId> legacyKeyInterner = new Interner<UniqueKey, ActivationId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq);
+        private static readonly Interner<GrainId, ActivationId> interner = new Interner<GrainId, ActivationId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq);
 
-        private static readonly Interner<UniqueKey, ActivationId> legacyKeyInterner;
-        private static readonly Interner<GrainId, ActivationId> interner;
-
-        static ActivationId()
-        {
-            legacyKeyInterner = new Interner<UniqueKey, ActivationId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq);
-            interner = new Interner<GrainId, ActivationId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq);
-            Zero = FindOrCreate(UniqueKey.Empty);
-        }
+        public static readonly ActivationId Zero = FindOrCreate(UniqueKey.Empty);
 
         /// <summary>
         /// Only used in Json serialization
         /// DO NOT USE TO CREATE A RANDOM ACTIVATION ID
         /// Use ActivationId.NewId to create new activation IDs.
         /// </summary>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public ActivationId()
         {
         }

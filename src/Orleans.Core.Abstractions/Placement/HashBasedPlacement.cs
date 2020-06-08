@@ -1,9 +1,10 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    public class HashBasedPlacement : PlacementStrategy
+    [Serializable, Immutable]
+    public sealed class HashBasedPlacement : PlacementStrategy
     {
         internal static HashBasedPlacement Singleton { get; } = new HashBasedPlacement();
     }

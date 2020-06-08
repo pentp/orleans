@@ -177,12 +177,12 @@ namespace Orleans.CodeGenerator.Utilities
             {
                 if (!attr.AttributeClass.HasBaseType(attributeType)) continue;
 
-                if (temp == null) temp = new List<AttributeData>();
+                temp ??= new List<AttributeData>();
                 temp.Add(attr);
             }
 
             attributes = temp?.ToArray();
-            return attributes != null && attributes.Length > 0;
+            return temp != null;
         }
 
         public static string GetValidIdentifier(this ITypeSymbol type)
@@ -214,39 +214,36 @@ namespace Orleans.CodeGenerator.Utilities
 
         public static IEnumerable<TSymbol> GetInstanceMembers<TSymbol>(this ITypeSymbol type) where TSymbol : ISymbol
         {
-            foreach (var candidate in type.GetMembers())
+            do
             {
-                if (candidate.IsStatic) continue;
-                if (candidate is TSymbol symbol) yield return symbol;
-            }
-
-            var baseType = type.BaseType;
-            if (baseType != null)
-            {
-                foreach (var t in baseType.GetInstanceMembers<TSymbol>()) yield return t;
-            }
+                foreach (var candidate in type.GetMembers())
+                {
+                    if (candidate.IsStatic) continue;
+                    if (candidate is TSymbol symbol) yield return symbol;
+                }
+                type = type.BaseType;
+            } while (type != null);
         }
 
         public static TSymbol Member<TSymbol>(this ITypeSymbol type, string name, Func<TSymbol, bool> predicate = null) where TSymbol : class
         {
-            var methods = type.GetMembers(name).OfType<TSymbol>();
-            if (predicate != null) methods = methods.Where(predicate);
-
-            var results = methods.ToList();
-
-            if (results.Count == 0)
+            TSymbol result = null;
+            foreach (var member in type.GetMembers(name))
             {
-                throw new KeyNotFoundException(
-                    $"Type {type} does not have a member of kind {typeof(TSymbol)} named {name}{(predicate == null ? String.Empty : " matching the specified predicate.")}");
+                if (member is TSymbol symbol && (predicate is null || predicate(symbol)))
+                {
+                    if (result != null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Type {type} has multiple members of kind {typeof(TSymbol)} named {name}{(predicate == null ? String.Empty : " matching the specified predicate.")}");
+                    }
+
+                    result = symbol;
+                }
             }
 
-            if (results.Count > 1)
-            {
-                throw new InvalidOperationException(
-                    $"Type {type} has multiple members of kind {typeof(TSymbol)} named {name}{(predicate == null ? String.Empty : " matching the specified predicate.")}");
-            }
-
-            return results[0];
+            return result ?? throw new KeyNotFoundException(
+                $"Type {type} does not have a member of kind {typeof(TSymbol)} named {name}{(predicate == null ? String.Empty : " matching the specified predicate.")}");
         }
 
         public static IMethodSymbol Method(this ITypeSymbol type, string name, Func<IMethodSymbol, bool> predicate = null) => type.Member(name, predicate);

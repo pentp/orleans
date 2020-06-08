@@ -1,9 +1,10 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    public class ActivationCountBasedPlacement : PlacementStrategy
+    [Serializable, Immutable]
+    public sealed class ActivationCountBasedPlacement : PlacementStrategy
     {
         internal static ActivationCountBasedPlacement Singleton { get; } = new ActivationCountBasedPlacement();
     }

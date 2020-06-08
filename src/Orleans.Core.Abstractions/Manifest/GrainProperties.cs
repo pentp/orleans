@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Text;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 
 namespace Orleans.Metadata
@@ -9,8 +10,8 @@ namespace Orleans.Metadata
     /// <summary>
     /// Information about a logical grain type <see cref="GrainType"/>.
     /// </summary>
-    [Serializable]
-    public class GrainProperties
+    [Serializable, Immutable]
+    public sealed class GrainProperties
     {
         /// <summary>
         /// Creates a <see cref="GrainProperties"/> instance.

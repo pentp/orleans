@@ -9,13 +9,11 @@ namespace Orleans.Streams
     /// <summary>
     /// Identifier of an Orleans virtual stream.
     /// </summary>
-    [Serializable]
-    [Immutable]
-    internal class StreamId : IStreamIdentity, IRingIdentifier<StreamId>, IEquatable<StreamId>, IComparable<StreamId>, ISerializable
+    [Serializable, Immutable]
+    internal sealed class StreamId : IStreamIdentity, IRingIdentifier<StreamId>, IEquatable<StreamId>, IComparable<StreamId>, ISerializable
     {
-        [NonSerialized]
-        private static readonly Lazy<Interner<StreamIdInternerKey, StreamId>> streamIdInternCache = new Lazy<Interner<StreamIdInternerKey, StreamId>>(
-            () => new Interner<StreamIdInternerKey, StreamId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq));
+        private static readonly Interner<StreamIdInternerKey, StreamId> streamIdInternCache =
+            new Interner<StreamIdInternerKey, StreamId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq);
 
         [NonSerialized]
         private uint uniformHashCache;
@@ -42,7 +40,7 @@ namespace Orleans.Streams
 
         private static StreamId FindOrCreateStreamId(StreamIdInternerKey key)
         {
-            return streamIdInternCache.Value.FindOrCreate(key, k => new StreamId(k));
+            return streamIdInternCache.FindOrCreate(key, k => new StreamId(k));
         }
 
         public int CompareTo(StreamId other)
@@ -93,8 +91,8 @@ namespace Orleans.Streams
 
         public override string ToString()
         {
-            return Namespace == null ? 
-                Guid.ToString() : 
+            return Namespace == null ?
+                Guid.ToString() :
                 String.Format("{0}{1}-{2}", Namespace != null ? (String.Format("{0}-", Namespace)) : "", Guid, ProviderName);
         }
 
@@ -106,8 +104,10 @@ namespace Orleans.Streams
             info.AddValue("Namespace", Namespace, typeof(string));
         }
 
+#pragma warning disable CS0628 // New protected member declared in sealed class
         // The special constructor is used to deserialize values. 
         protected StreamId(SerializationInfo info, StreamingContext context)
+#pragma warning restore CS0628
         {
             // Reset the property value using the GetValue method.
             var guid = (Guid) info.GetValue("Guid", typeof(Guid));
@@ -117,9 +117,8 @@ namespace Orleans.Streams
         }
     }
 
-    [Serializable]
-    [Immutable]
-    internal struct StreamIdInternerKey : IComparable<StreamIdInternerKey>, IEquatable<StreamIdInternerKey>
+    [Serializable, Immutable]
+    internal readonly struct StreamIdInternerKey : IComparable<StreamIdInternerKey>, IEquatable<StreamIdInternerKey>
     {
         internal readonly Guid Guid;
         internal readonly string ProviderName;
@@ -157,7 +156,7 @@ namespace Orleans.Streams
                 int cmp2 = string.Compare(ProviderName, other.ProviderName, StringComparison.Ordinal);
                 return cmp2 == 0 ? string.Compare(Namespace, other.Namespace, StringComparison.Ordinal) : cmp2;
             }
-            
+
             return cmp1;
         }
 

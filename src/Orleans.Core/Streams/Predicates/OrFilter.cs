@@ -8,7 +8,7 @@ namespace Orleans.Streams
     /// This class is a [Serializable] holder for a logical-or composite predicate function.
     /// </summary>
     [Serializable]
-    internal class OrFilter : IStreamFilterPredicateWrapper, ISerializable
+    internal sealed class OrFilter : IStreamFilterPredicateWrapper, ISerializable
     {
         public object FilterData
         {
@@ -37,10 +37,13 @@ namespace Orleans.Streams
             filters.Add(filter);
         }
 
+#pragma warning disable CS0628 // New protected member declared in sealed class
         protected OrFilter(SerializationInfo info, StreamingContext context)
+#pragma warning restore CS0628
         {
             filters = (List<IStreamFilterPredicateWrapper>)info.GetValue("Filters", serializedType);
         }
+
         public void GetObjectData(SerializationInfo info, StreamingContext context)
         {
             info.AddValue("Filters", this.filters, serializedType);

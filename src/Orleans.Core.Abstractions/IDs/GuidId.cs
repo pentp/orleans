@@ -9,12 +9,10 @@ namespace Orleans.Runtime
     /// Wrapper object around Guid.
     /// Can be used in places where Guid is optional and in those cases it can be set to null and will not use the storage of an empty Guid struct.
     /// </summary>
-    [Serializable]
-    [Immutable]
+    [Serializable, Immutable]
     public sealed class GuidId : IEquatable<GuidId>, IComparable<GuidId>, ISerializable
     {
-        private static readonly Lazy<Interner<Guid, GuidId>> guidIdInternCache = new Lazy<Interner<Guid, GuidId>>(
-                    () => new Interner<Guid, GuidId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq));
+        private static readonly Interner<Guid, GuidId> guidIdInternCache = new Interner<Guid, GuidId>(InternerConstants.SIZE_LARGE, InternerConstants.DefaultCacheCleanupFreq);
 
         public readonly Guid Guid;
 
@@ -38,7 +36,7 @@ namespace Orleans.Runtime
 
         private static GuidId FindOrCreateGuidId(Guid guid)
         {
-            return guidIdInternCache.Value.FindOrCreate(guid, g => new GuidId(g));
+            return guidIdInternCache.FindOrCreate(guid, g => new GuidId(g));
         }
 
         public int CompareTo(GuidId other)

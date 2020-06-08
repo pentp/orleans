@@ -1,9 +1,10 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    internal class CorrelationId : IEquatable<CorrelationId>, IComparable<CorrelationId>
+    [Serializable, Immutable]
+    internal sealed class CorrelationId : IEquatable<CorrelationId>, IComparable<CorrelationId>
     {
         private readonly long id;
         private static long nextToUse = 1;
@@ -21,7 +22,7 @@ namespace Orleans.Runtime
         {
             id = other.id;
         }
-        
+
         public static CorrelationId GetNext()
         {
             long val = System.Threading.Interlocked.Increment(ref nextToUse);
@@ -30,7 +31,7 @@ namespace Orleans.Runtime
 
         public override int GetHashCode()
         {
- 	        return id.GetHashCode();
+            return id.GetHashCode();
         }
 
         public override bool Equals(object obj)

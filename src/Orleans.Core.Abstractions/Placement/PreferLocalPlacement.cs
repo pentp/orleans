@@ -1,9 +1,10 @@
 using System;
+using Orleans.Concurrency;
 
 namespace Orleans.Runtime
 {
-    [Serializable]
-    public class PreferLocalPlacement : PlacementStrategy
+    [Serializable, Immutable]
+    public sealed class PreferLocalPlacement : PlacementStrategy
     {
         internal static PreferLocalPlacement Singleton { get; } = new PreferLocalPlacement();
     }
