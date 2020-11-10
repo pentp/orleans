@@ -648,11 +648,12 @@ namespace Orleans.Serialization
             var dict = (Dictionary<string, object>)original;
             SerializationManager.SerializeInner(dict.Comparer.Equals(EqualityComparer<string>.Default) ? null : dict.Comparer,
                                            context, typeof(IEqualityComparer<string>));
-            context.StreamWriter.Write(dict.Count);
+            var writer = context.StreamWriter;
+            writer.Write(dict.Count);
             foreach (var pair in dict)
             {
                 //context.Stream.WriteTypeHeader(stringType, stringType);
-                context.StreamWriter.Write(pair.Key);
+                writer.Write(pair.Key);
                 SerializationManager.SerializeInner(pair.Value, context, objectType);
             }
         }
@@ -660,13 +661,14 @@ namespace Orleans.Serialization
         internal static object DeserializeStringObjectDictionary(Type expected, IDeserializationContext context)
         {
             var comparer = (IEqualityComparer<string>)SerializationManager.DeserializeInner(typeof(IEqualityComparer<string>), context);
-            var count = context.StreamReader.ReadInt();
+            var reader = context.StreamReader;
+            var count = reader.ReadInt();
             var dict = new Dictionary<string, object>(count, comparer);
             context.RecordObject(dict);
             for (var i = 0; i < count; i++)
             {
                 //context.Stream.ReadFullTypeHeader(stringType); // Skip the type header, which will be string
-                var key = context.StreamReader.ReadString();
+                var key = reader.ReadString();
                 var value = SerializationManager.DeserializeInner(null, context);
                 dict[key] = value;
             }
@@ -1782,9 +1784,10 @@ namespace Orleans.Serialization
 
         internal static object DeserializeNullable<T>(Type expected, IDeserializationContext context) where T : struct
         {
-            if (context.StreamReader.PeekToken() == SerializationTokenType.Null)
+            var reader = context.StreamReader;
+            if (reader.PeekToken() == SerializationTokenType.Null)
             {
-                context.StreamReader.ReadToken();
+                reader.ReadToken();
                 return new T?();
             }
 
@@ -1836,13 +1839,12 @@ namespace Orleans.Serialization
 
         internal static void SerializeTimeSpan(object obj, ISerializationContext context, Type expected)
         {
-            var ts = (TimeSpan)obj;
-            context.StreamWriter.Write(ts.Ticks);
+            context.StreamWriter.Write((TimeSpan)obj);
         }
 
         internal static object DeserializeTimeSpan(Type expected, IDeserializationContext context)
         {
-            return new TimeSpan(context.StreamReader.ReadLong());
+            return context.StreamReader.ReadTimeSpan();
         }
 
         internal static object CopyTimeSpan(object obj, ICopyContext context)
@@ -1853,13 +1855,15 @@ namespace Orleans.Serialization
         internal static void SerializeDateTimeOffset(object obj, ISerializationContext context, Type expected)
         {
             var dts = (DateTimeOffset)obj;
-            context.StreamWriter.Write(dts.DateTime.Ticks);
-            context.StreamWriter.Write(dts.Offset.Ticks);
+            var writer = context.StreamWriter;
+            writer.Write(dts.DateTime.Ticks);
+            writer.Write(dts.Offset);
         }
 
         internal static object DeserializeDateTimeOffset(Type expected, IDeserializationContext context)
         {
-            return new DateTimeOffset(context.StreamReader.ReadLong(), new TimeSpan(context.StreamReader.ReadLong()));
+            var reader = context.StreamReader;
+            return new DateTimeOffset(reader.ReadLong(), reader.ReadTimeSpan());
         }
 
         internal static object CopyDateTimeOffset(object obj, ICopyContext context)
@@ -1896,14 +1900,12 @@ namespace Orleans.Serialization
 
         internal static void SerializeGuid(object obj, ISerializationContext context, Type expected)
         {
-            var guid = (Guid)obj;
-            context.StreamWriter.Write(guid.ToByteArray());
+            context.StreamWriter.Write((Guid)obj);
         }
 
         internal static object DeserializeGuid(Type expected, IDeserializationContext context)
         {
-            var bytes = context.StreamReader.ReadBytes(16);
-            return new Guid(bytes);
+            return context.StreamReader.ReadGuid();
         }
 
         internal static object CopyGuid(object obj, ICopyContext context)
@@ -2029,14 +2031,12 @@ namespace Orleans.Serialization
 
         internal static void SerializeCorrelationId(object obj, ISerializationContext context, Type expected)
         {
-            var id = (CorrelationId)obj;
-            context.StreamWriter.Write(id);
+            context.StreamWriter.Write((CorrelationId)obj);
         }
 
         internal static object DeserializeCorrelationId(Type expected, IDeserializationContext context)
         {
-            var id = context.StreamReader.ReadLong();
-            return new CorrelationId(id);
+            return context.StreamReader.ReadCorrelationId();
         }
 
         internal static object CopyCorrelationId(object original, ICopyContext context)
@@ -2069,9 +2069,10 @@ namespace Orleans.Serialization
         {
             var request = (InvokeMethodRequest)obj;
 
-            context.StreamWriter.Write(request.InterfaceTypeCode);
-            context.StreamWriter.Write(request.MethodId);
-            context.StreamWriter.Write(request.Arguments != null ? request.Arguments.Length : 0);
+            var writer = context.StreamWriter;
+            writer.Write(request.InterfaceTypeCode);
+            writer.Write(request.MethodId);
+            writer.Write(request.Arguments != null ? request.Arguments.Length : 0);
 
             if (request.Arguments != null)
             {
@@ -2084,10 +2085,10 @@ namespace Orleans.Serialization
 
         internal static object DeserializeInvokeMethodRequest(Type expected, IDeserializationContext context)
         {
-            int iid = context.StreamReader.ReadInt();
-            int mid = context.StreamReader.ReadInt();
-
-            int argCount = context.StreamReader.ReadInt();
+            var reader = context.StreamReader;
+            int iid = reader.ReadInt();
+            int mid = reader.ReadInt();
+            int argCount = reader.ReadInt();
             object[] args = null;
 
             if (argCount > 0)

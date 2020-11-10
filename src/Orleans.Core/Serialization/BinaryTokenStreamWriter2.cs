@@ -4,7 +4,6 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -18,8 +17,6 @@ namespace Orleans.Serialization
     /// </summary>
     internal sealed class BinaryTokenStreamWriter2<TBufferWriter> : IBinaryTokenStreamWriter where TBufferWriter : IBufferWriter<byte>
     {
-        private static readonly Dictionary<Type, SerializationTokenType> typeTokens;
-        private static readonly Dictionary<Type, Action<BinaryTokenStreamWriter2<TBufferWriter>, object>> writers;
         private static readonly Encoding Utf8Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
 
         private readonly Encoder utf8Encoder = Utf8Encoding.GetEncoder();
@@ -28,81 +25,82 @@ namespace Orleans.Serialization
         private int currentOffset;
         private int completedLength;
 
-        static BinaryTokenStreamWriter2()
+        private static readonly Dictionary<Type, SerializationTokenType> typeTokens = new Dictionary<Type, SerializationTokenType>
         {
-            typeTokens = new Dictionary<Type, SerializationTokenType>();
-            typeTokens[typeof(bool)] = SerializationTokenType.Boolean;
-            typeTokens[typeof(int)] = SerializationTokenType.Int;
-            typeTokens[typeof(uint)] = SerializationTokenType.Uint;
-            typeTokens[typeof(short)] = SerializationTokenType.Short;
-            typeTokens[typeof(ushort)] = SerializationTokenType.Ushort;
-            typeTokens[typeof(long)] = SerializationTokenType.Long;
-            typeTokens[typeof(ulong)] = SerializationTokenType.Ulong;
-            typeTokens[typeof(byte)] = SerializationTokenType.Byte;
-            typeTokens[typeof(sbyte)] = SerializationTokenType.Sbyte;
-            typeTokens[typeof(float)] = SerializationTokenType.Float;
-            typeTokens[typeof(double)] = SerializationTokenType.Double;
-            typeTokens[typeof(decimal)] = SerializationTokenType.Decimal;
-            typeTokens[typeof(string)] = SerializationTokenType.String;
-            typeTokens[typeof(char)] = SerializationTokenType.Character;
-            typeTokens[typeof(Guid)] = SerializationTokenType.Guid;
-            typeTokens[typeof(DateTime)] = SerializationTokenType.Date;
-            typeTokens[typeof(TimeSpan)] = SerializationTokenType.TimeSpan;
-            typeTokens[typeof(GrainId)] = SerializationTokenType.GrainId;
-            typeTokens[typeof(ActivationId)] = SerializationTokenType.ActivationId;
-            typeTokens[typeof(SiloAddress)] = SerializationTokenType.SiloAddress;
-            typeTokens[typeof(ActivationAddress)] = SerializationTokenType.ActivationAddress;
-            typeTokens[typeof(IPAddress)] = SerializationTokenType.IpAddress;
-            typeTokens[typeof(IPEndPoint)] = SerializationTokenType.IpEndPoint;
-            typeTokens[typeof(CorrelationId)] = SerializationTokenType.CorrelationId;
-            typeTokens[typeof(InvokeMethodRequest)] = SerializationTokenType.Request;
-            typeTokens[typeof(Response)] = SerializationTokenType.Response;
-            typeTokens[typeof(Dictionary<string, object>)] = SerializationTokenType.StringObjDict;
-            typeTokens[typeof(Object)] = SerializationTokenType.Object;
-            typeTokens[typeof(List<>)] = SerializationTokenType.List;
-            typeTokens[typeof(SortedList<,>)] = SerializationTokenType.SortedList;
-            typeTokens[typeof(Dictionary<,>)] = SerializationTokenType.Dictionary;
-            typeTokens[typeof(HashSet<>)] = SerializationTokenType.Set;
-            typeTokens[typeof(SortedSet<>)] = SerializationTokenType.SortedSet;
-            typeTokens[typeof(KeyValuePair<,>)] = SerializationTokenType.KeyValuePair;
-            typeTokens[typeof(LinkedList<>)] = SerializationTokenType.LinkedList;
-            typeTokens[typeof(Stack<>)] = SerializationTokenType.Stack;
-            typeTokens[typeof(Queue<>)] = SerializationTokenType.Queue;
-            typeTokens[typeof(Tuple<>)] = SerializationTokenType.Tuple + 1;
-            typeTokens[typeof(Tuple<,>)] = SerializationTokenType.Tuple + 2;
-            typeTokens[typeof(Tuple<,,>)] = SerializationTokenType.Tuple + 3;
-            typeTokens[typeof(Tuple<,,,>)] = SerializationTokenType.Tuple + 4;
-            typeTokens[typeof(Tuple<,,,,>)] = SerializationTokenType.Tuple + 5;
-            typeTokens[typeof(Tuple<,,,,,>)] = SerializationTokenType.Tuple + 6;
-            typeTokens[typeof(Tuple<,,,,,,>)] = SerializationTokenType.Tuple + 7;
+            [typeof(bool)] = SerializationTokenType.Boolean,
+            [typeof(int)] = SerializationTokenType.Int,
+            [typeof(uint)] = SerializationTokenType.Uint,
+            [typeof(short)] = SerializationTokenType.Short,
+            [typeof(ushort)] = SerializationTokenType.Ushort,
+            [typeof(long)] = SerializationTokenType.Long,
+            [typeof(ulong)] = SerializationTokenType.Ulong,
+            [typeof(byte)] = SerializationTokenType.Byte,
+            [typeof(sbyte)] = SerializationTokenType.Sbyte,
+            [typeof(float)] = SerializationTokenType.Float,
+            [typeof(double)] = SerializationTokenType.Double,
+            [typeof(decimal)] = SerializationTokenType.Decimal,
+            [typeof(string)] = SerializationTokenType.String,
+            [typeof(char)] = SerializationTokenType.Character,
+            [typeof(Guid)] = SerializationTokenType.Guid,
+            [typeof(DateTime)] = SerializationTokenType.Date,
+            [typeof(TimeSpan)] = SerializationTokenType.TimeSpan,
+            [typeof(GrainId)] = SerializationTokenType.GrainId,
+            [typeof(ActivationId)] = SerializationTokenType.ActivationId,
+            [typeof(SiloAddress)] = SerializationTokenType.SiloAddress,
+            [typeof(ActivationAddress)] = SerializationTokenType.ActivationAddress,
+            [typeof(IPAddress)] = SerializationTokenType.IpAddress,
+            [typeof(IPEndPoint)] = SerializationTokenType.IpEndPoint,
+            [typeof(CorrelationId)] = SerializationTokenType.CorrelationId,
+            [typeof(InvokeMethodRequest)] = SerializationTokenType.Request,
+            [typeof(Response)] = SerializationTokenType.Response,
+            [typeof(Dictionary<string, object>)] = SerializationTokenType.StringObjDict,
+            [typeof(Object)] = SerializationTokenType.Object,
+            [typeof(List<>)] = SerializationTokenType.List,
+            [typeof(SortedList<,>)] = SerializationTokenType.SortedList,
+            [typeof(Dictionary<,>)] = SerializationTokenType.Dictionary,
+            [typeof(HashSet<>)] = SerializationTokenType.Set,
+            [typeof(SortedSet<>)] = SerializationTokenType.SortedSet,
+            [typeof(KeyValuePair<,>)] = SerializationTokenType.KeyValuePair,
+            [typeof(LinkedList<>)] = SerializationTokenType.LinkedList,
+            [typeof(Stack<>)] = SerializationTokenType.Stack,
+            [typeof(Queue<>)] = SerializationTokenType.Queue,
+            [typeof(Tuple<>)] = SerializationTokenType.Tuple + 1,
+            [typeof(Tuple<,>)] = SerializationTokenType.Tuple + 2,
+            [typeof(Tuple<,,>)] = SerializationTokenType.Tuple + 3,
+            [typeof(Tuple<,,,>)] = SerializationTokenType.Tuple + 4,
+            [typeof(Tuple<,,,,>)] = SerializationTokenType.Tuple + 5,
+            [typeof(Tuple<,,,,,>)] = SerializationTokenType.Tuple + 6,
+            [typeof(Tuple<,,,,,,>)] = SerializationTokenType.Tuple + 7
+        };
 
-            writers = new Dictionary<Type, Action<BinaryTokenStreamWriter2<TBufferWriter>, object>>();
-            writers[typeof(bool)] = (stream, obj) => stream.Write((bool)obj);
-            writers[typeof(int)] = (stream, obj) => { stream.Write(SerializationTokenType.Int); stream.Write((int)obj); };
-            writers[typeof(uint)] = (stream, obj) => { stream.Write(SerializationTokenType.Uint); stream.Write((uint)obj); };
-            writers[typeof(short)] = (stream, obj) => { stream.Write(SerializationTokenType.Short); stream.Write((short)obj); };
-            writers[typeof(ushort)] = (stream, obj) => { stream.Write(SerializationTokenType.Ushort); stream.Write((ushort)obj); };
-            writers[typeof(long)] = (stream, obj) => { stream.Write(SerializationTokenType.Long); stream.Write((long)obj); };
-            writers[typeof(ulong)] = (stream, obj) => { stream.Write(SerializationTokenType.Ulong); stream.Write((ulong)obj); };
-            writers[typeof(byte)] = (stream, obj) => { stream.Write(SerializationTokenType.Byte); stream.Write((byte)obj); };
-            writers[typeof(sbyte)] = (stream, obj) => { stream.Write(SerializationTokenType.Sbyte); stream.Write((sbyte)obj); };
-            writers[typeof(float)] = (stream, obj) => { stream.Write(SerializationTokenType.Float); stream.Write((float)obj); };
-            writers[typeof(double)] = (stream, obj) => { stream.Write(SerializationTokenType.Double); stream.Write((double)obj); };
-            writers[typeof(decimal)] = (stream, obj) => { stream.Write(SerializationTokenType.Decimal); stream.Write((decimal)obj); };
-            writers[typeof(string)] = (stream, obj) => { stream.Write(SerializationTokenType.String); stream.Write((string)obj); };
-            writers[typeof(char)] = (stream, obj) => { stream.Write(SerializationTokenType.Character); stream.Write((char)obj); };
-            writers[typeof(Guid)] = (stream, obj) => { stream.Write(SerializationTokenType.Guid); stream.Write((Guid)obj); };
-            writers[typeof(DateTime)] = (stream, obj) => { stream.Write(SerializationTokenType.Date); stream.Write((DateTime)obj); };
-            writers[typeof(TimeSpan)] = (stream, obj) => { stream.Write(SerializationTokenType.TimeSpan); stream.Write((TimeSpan)obj); };
-            writers[typeof(GrainId)] = (stream, obj) => { stream.Write(SerializationTokenType.GrainId); stream.Write((GrainId)obj); };
-            writers[typeof(ActivationId)] = (stream, obj) => { stream.Write(SerializationTokenType.ActivationId); stream.Write((ActivationId)obj); };
-            writers[typeof(SiloAddress)] = (stream, obj) => { stream.Write(SerializationTokenType.SiloAddress); stream.Write((SiloAddress)obj); };
-            writers[typeof(ActivationAddress)] = (stream, obj) => { stream.Write(SerializationTokenType.ActivationAddress); stream.Write((ActivationAddress)obj); };
-            writers[typeof(IPAddress)] = (stream, obj) => { stream.Write(SerializationTokenType.IpAddress); stream.Write((IPAddress)obj); };
-            writers[typeof(IPEndPoint)] = (stream, obj) => { stream.Write(SerializationTokenType.IpEndPoint); stream.Write((IPEndPoint)obj); };
-            writers[typeof(CorrelationId)] = (stream, obj) => { stream.Write(SerializationTokenType.CorrelationId); stream.Write((CorrelationId)obj); };
-        }
-        
+        private static readonly Dictionary<Type, Action<BinaryTokenStreamWriter2<TBufferWriter>, object>> writers = new Dictionary<Type, Action<BinaryTokenStreamWriter2<TBufferWriter>, object>>
+        {
+            [typeof(bool)] = (stream, obj) => stream.Write((bool)obj),
+            [typeof(int)] = (stream, obj) => { stream.Write(SerializationTokenType.Int); stream.Write((int)obj); },
+            [typeof(uint)] = (stream, obj) => { stream.Write(SerializationTokenType.Uint); stream.Write((uint)obj); },
+            [typeof(short)] = (stream, obj) => { stream.Write(SerializationTokenType.Short); stream.Write((short)obj); },
+            [typeof(ushort)] = (stream, obj) => { stream.Write(SerializationTokenType.Ushort); stream.Write((ushort)obj); },
+            [typeof(long)] = (stream, obj) => { stream.Write(SerializationTokenType.Long); stream.Write((long)obj); },
+            [typeof(ulong)] = (stream, obj) => { stream.Write(SerializationTokenType.Ulong); stream.Write((ulong)obj); },
+            [typeof(byte)] = (stream, obj) => { stream.Write(SerializationTokenType.Byte); stream.Write((byte)obj); },
+            [typeof(sbyte)] = (stream, obj) => { stream.Write(SerializationTokenType.Sbyte); stream.Write((sbyte)obj); },
+            [typeof(float)] = (stream, obj) => { stream.Write(SerializationTokenType.Float); stream.Write((float)obj); },
+            [typeof(double)] = (stream, obj) => { stream.Write(SerializationTokenType.Double); stream.Write((double)obj); },
+            [typeof(decimal)] = (stream, obj) => { stream.Write(SerializationTokenType.Decimal); stream.Write((decimal)obj); },
+            [typeof(string)] = (stream, obj) => { stream.Write(SerializationTokenType.String); stream.Write((string)obj); },
+            [typeof(char)] = (stream, obj) => { stream.Write(SerializationTokenType.Character); stream.Write((char)obj); },
+            [typeof(Guid)] = (stream, obj) => { stream.Write(SerializationTokenType.Guid); stream.Write((Guid)obj); },
+            [typeof(DateTime)] = (stream, obj) => { stream.Write(SerializationTokenType.Date); stream.Write((DateTime)obj); },
+            [typeof(TimeSpan)] = (stream, obj) => { stream.Write(SerializationTokenType.TimeSpan); stream.Write((TimeSpan)obj); },
+            [typeof(GrainId)] = (stream, obj) => { stream.Write(SerializationTokenType.GrainId); stream.Write((GrainId)obj); },
+            [typeof(ActivationId)] = (stream, obj) => { stream.Write(SerializationTokenType.ActivationId); stream.Write((ActivationId)obj); },
+            [typeof(SiloAddress)] = (stream, obj) => { stream.Write(SerializationTokenType.SiloAddress); stream.Write((SiloAddress)obj); },
+            [typeof(ActivationAddress)] = (stream, obj) => { stream.Write(SerializationTokenType.ActivationAddress); stream.Write((ActivationAddress)obj); },
+            [typeof(IPAddress)] = (stream, obj) => { stream.Write(SerializationTokenType.IpAddress); stream.Write((IPAddress)obj); },
+            [typeof(IPEndPoint)] = (stream, obj) => { stream.Write(SerializationTokenType.IpEndPoint); stream.Write((IPEndPoint)obj); },
+            [typeof(CorrelationId)] = (stream, obj) => { stream.Write(SerializationTokenType.CorrelationId); stream.Write((CorrelationId)obj); }
+        };
+
         public BinaryTokenStreamWriter2(TBufferWriter output)
         {
             this.PartialReset(output);
@@ -195,7 +193,7 @@ namespace Orleans.Serialization
 
         public void Write(char c)
         {
-            this.Write(Convert.ToInt16(c));
+            this.Write((ushort)c);
         }
         
         public void Write(bool b)
@@ -232,7 +230,7 @@ namespace Orleans.Serialization
                 return;
             }
 
-            if (t.GetTypeInfo().IsGenericType)
+            if (t.IsGenericType)
             {
                 if (typeTokens.TryGetValue(t.GetGenericTypeDefinition(), out token))
                 {
@@ -253,23 +251,9 @@ namespace Orleans.Serialization
                 
         public void Write(byte[] b, int offset, int count)
         {
-            if (count <= 0)
-            {
-                return;
-            }
-
-            if ((offset == 0) && (count == b.Length))
-            {
-                this.Write(b);
-            }
-            else
-            {
-                var temp = new byte[count];
-                Buffer.BlockCopy(b, offset, temp, 0, count);
-                this.Write(temp);
-            }
+            this.Write(b.AsSpan(offset, count));
         }
-        
+
         public void Write(IPEndPoint ep)
         {
             this.Write(ep.Address);
@@ -278,21 +262,32 @@ namespace Orleans.Serialization
         
         public void Write(IPAddress ip)
         {
+#if NETCOREAPP
+            Span<byte> buf = stackalloc byte[16];
             if (ip.AddressFamily == AddressFamily.InterNetwork)
             {
-                for (var i = 0; i < 12; i++)
-                {
-                    this.Write((byte)0);
-                }
-                
+                buf.Clear();
+                ip.TryWriteBytes(buf.Slice(12), out _); // IPv4 -- 4 bytes
+            }
+            else
+            {
+                ip.TryWriteBytes(buf, out _); // IPv6 -- 16 bytes
+            }
+            this.Write(buf);
+#else
+            if (ip.AddressFamily == AddressFamily.InterNetwork)
+            {
+                this.Write(0L);
+                this.Write(0);
                 this.Write(ip.GetAddressBytes()); // IPv4 -- 4 bytes
             }
             else
             {
                 this.Write(ip.GetAddressBytes()); // IPv6 -- 16 bytes
             }
+#endif
         }
-        
+
         public void Write(SiloAddress addr)
         {
             this.Write(addr.Endpoint);
@@ -309,8 +304,15 @@ namespace Orleans.Serialization
             this.Write(dt.ToBinary());
         }
 
-        public void Write(Guid id)
+        public unsafe void Write(Guid id)
         {
+#if NETCOREAPP
+            if (BitConverter.IsLittleEndian)
+            {
+                this.Write(new ReadOnlySpan<byte>(&id, sizeof(Guid)));
+                return;
+            }
+#endif
             this.Write(id.ToByteArray());
         }
 
@@ -440,57 +442,60 @@ namespace Orleans.Serialization
 
         public void Write(short[] array)
         {
-            this.Write(MemoryMarshal.Cast<short, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
         public void Write(int[] array)
         {
-            this.Write(MemoryMarshal.Cast<int, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
         public void Write(long[] array)
         {
-            this.Write(MemoryMarshal.Cast<long, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
         public void Write(ushort[] array)
         {
-            this.Write(MemoryMarshal.Cast<ushort, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
         public void Write(uint[] array)
         {
-            this.Write(MemoryMarshal.Cast<uint, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
         public void Write(ulong[] array)
         {
-            this.Write(MemoryMarshal.Cast<ulong, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
-        public void Write(sbyte[] array)
-        {
-            this.Write(MemoryMarshal.Cast<sbyte, byte>(array));
-        }
+        public void Write(sbyte[] array) => Write(MemoryMarshal.AsBytes(array.AsSpan()));
 
         public void Write(char[] array)
         {
-            this.Write(MemoryMarshal.Cast<char, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
-        public void Write(bool[] array)
-        {
-            this.Write(MemoryMarshal.Cast<bool, byte>(array));
-        }
+        public void Write(bool[] array) => Write(MemoryMarshal.AsBytes(array.AsSpan()));
 
         public void Write(float[] array)
         {
-            this.Write(MemoryMarshal.Cast<float, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
         public void Write(double[] array)
         {
-            this.Write(MemoryMarshal.Cast<double, byte>(array));
+            if (BitConverter.IsLittleEndian) Write(MemoryMarshal.AsBytes(array.AsSpan()));
+            else foreach (var v in array) Write(v);
         }
 
         public void Write(byte b)
@@ -509,17 +514,13 @@ namespace Orleans.Serialization
             this.currentOffset += width;
         }
 
-        public void Write(float i)
-        {
-            ReadOnlySpan<float> span = stackalloc float[1] { i };
-            this.Write(MemoryMarshal.Cast<float, byte>(span));
-        }
+#if NETCOREAPP
+        public void Write(float i) => Write(BitConverter.SingleToInt32Bits(i));
+#else
+        public unsafe void Write(float i) => Write(*(int*)&i);
+#endif
 
-        public void Write(double i)
-        {
-            ReadOnlySpan<double> span = stackalloc double[1] { i };
-            this.Write(MemoryMarshal.Cast<double, byte>(span));
-        }
+        public void Write(double i) => Write(BitConverter.DoubleToInt64Bits(i));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Write(short value)

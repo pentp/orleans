@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
-using System.Reflection.Emit;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +15,6 @@ using Microsoft.Extensions.Options;
 using Orleans.ApplicationParts;
 using Orleans.CodeGeneration;
 using Orleans.Configuration;
-using Orleans.GrainReferences;
 using Orleans.Metadata;
 using Orleans.Runtime;
 using Orleans.Utilities;
@@ -1320,82 +1319,27 @@ namespace Orleans.Serialization
                     return reader.ReadBytes(length1);
 
                 if (et.TypeHandle.Equals(sbyteTypeHandle))
-                {
-                    var result = new sbyte[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new sbyte[length1]);
                 if (et.TypeHandle.Equals(shortTypeHandle))
-                {
-                    var result = new short[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new short[length1]);
                 if (et.TypeHandle.Equals(intTypeHandle))
-                {
-                    var result = new int[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new int[length1]);
                 if (et.TypeHandle.Equals(longTypeHandle))
-                {
-                    var result = new long[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new long[length1]);
                 if (et.TypeHandle.Equals(ushortTypeHandle))
-                {
-                    var result = new ushort[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new ushort[length1]);
                 if (et.TypeHandle.Equals(uintTypeHandle))
-                {
-                    var result = new uint[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new uint[length1]);
                 if (et.TypeHandle.Equals(ulongTypeHandle))
-                {
-                    var result = new ulong[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new ulong[length1]);
                 if (et.TypeHandle.Equals(doubleTypeHandle))
-                {
-                    var result = new double[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new double[length1]);
                 if (et.TypeHandle.Equals(floatTypeHandle))
-                {
-                    var result = new float[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new float[length1]);
                 if (et.TypeHandle.Equals(charTypeHandle))
-                {
-                    var result = new char[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new char[length1]);
                 if (et.TypeHandle.Equals(boolTypeHandle))
-                {
-                    var result = new bool[length1];
-                    var n = Buffer.ByteLength(result);
-                    reader.ReadBlockInto(result, n);
-                    return result;
-                }
+                    return Read(reader, new bool[length1]);
             }
 
 
@@ -1466,6 +1410,17 @@ namespace Orleans.Serialization
             }
 
             return array;
+        }
+
+        private unsafe static T[] Read<T>(IBinaryTokenStreamReader reader, T[] result) where T : unmanaged
+        {
+            if (!BitConverter.IsLittleEndian && sizeof(T) > 1) throw new NotImplementedException();
+
+            if (reader is BinaryTokenStreamReader2 r2)
+                r2.ReadBytes(MemoryMarshal.AsBytes(result.AsSpan()));
+            else
+                reader.ReadBlockInto(result, result.Length * sizeof(T));
+            return result;
         }
 
         internal Deserializer GetDeserializer(Type t)

@@ -325,7 +325,7 @@ namespace Orleans.Serialization
         public void Write(char c)
         {
             Trace("--Wrote char {0}", c);
-            ab.Append(Convert.ToInt16(c));
+            ab.Append(c);
         }
 
         // Other primitives

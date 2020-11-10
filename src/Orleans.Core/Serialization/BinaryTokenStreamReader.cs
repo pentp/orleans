@@ -156,22 +156,13 @@ namespace Orleans.Serialization
                     result = @this.ReadChar();
                     break;
                 case SerializationTokenType.Guid:
-                    if (@this is BinaryTokenStreamReader2 reader)
-                    {
-                        result = reader.ReadGuid();
-                    }
-                    else
-                    {
-                        var bytes = @this.ReadBytes(16);
-                        result = new Guid(bytes);
-                    }
-
+                    result = @this.ReadGuid();
                     break;
                 case SerializationTokenType.Date:
-                    result = DateTime.FromBinary(@this.ReadLong());
+                    result = @this.ReadDateTime();
                     break;
                 case SerializationTokenType.TimeSpan:
-                    result = new TimeSpan(@this.ReadLong());
+                    result = @this.ReadTimeSpan();
                     break;
                 case SerializationTokenType.GrainId:
                     result = @this.ReadGrainId();
@@ -519,7 +510,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="input">Input binary data to be tokenized.</param>
         public BinaryTokenStreamReader(byte[] input)
-            : this(new List<ArraySegment<byte>> { new ArraySegment<byte>(input) })
+            : this(new ArraySegment<byte>(input))
         {
         }
 
@@ -870,7 +861,7 @@ namespace Orleans.Serialization
         public char ReadChar()
         {
             Trace("--Read char");
-            return Convert.ToChar(ReadShort());
+            return (char)ReadUShort();
         }
 
         /// <summary> Read an <c>byte</c> value from the stream. </summary>
