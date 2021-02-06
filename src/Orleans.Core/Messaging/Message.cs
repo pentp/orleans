@@ -967,7 +967,7 @@ namespace Orleans.Runtime
                     foreach (var d in requestData)
                     {
                         writer.Write(d.Key);
-                        SerializationManager.SerializeInner(d.Value, context, typeof(object));
+                        sm.SerializeInner(d.Value, typeof(object), context, writer);
                     }
                 }
 
@@ -1010,11 +1010,11 @@ namespace Orleans.Runtime
                 }
 
                 if ((headers & Headers.TRANSACTION_INFO) != Headers.NONE)
-                    SerializationManager.SerializeInner(input.TransactionInfo, context, typeof(ITransactionInfo));
+                    sm.SerializeInner(input.TransactionInfo, typeof(ITransactionInfo), context, writer);
 
                 if ((headers & Headers.TRACE_CONTEXT) != Headers.NONE)
                 {
-                    SerializationManager.SerializeInner(input._traceContext, context, typeof(TraceContext));
+                    sm.SerializeInner(input._traceContext, typeof(TraceContext), context, writer);
                 }
 
                 if ((headers & Headers.INTERFACE_TYPE) != Headers.NONE)
@@ -1099,7 +1099,7 @@ namespace Orleans.Runtime
                     var requestData = new Dictionary<string, object>(c);
                     for (int i = 0; i < c; i++)
                     {
-                        requestData[reader.ReadString()] = SerializationManager.DeserializeInner(null, context);
+                        requestData[reader.ReadString()] = sm.DeserializeInner(null, context, reader);
                     }
                     result.RequestContextData = requestData;
                 }
@@ -1137,10 +1137,10 @@ namespace Orleans.Runtime
                 result.IsTransactionRequired = (headers & Headers.IS_TRANSACTION_REQUIRED) != Headers.NONE;
 
                 if ((headers & Headers.TRANSACTION_INFO) != Headers.NONE)
-                    result.TransactionInfo = SerializationManager.DeserializeInner<ITransactionInfo>(context);
+                    result.TransactionInfo = (ITransactionInfo)sm.DeserializeInner(typeof(ITransactionInfo), context, reader);
 
                 if ((headers & Headers.TRACE_CONTEXT) != Headers.NONE)
-                    result.TraceContext = SerializationManager.DeserializeInner<TraceContext>(context);
+                    result.TraceContext = (TraceContext)sm.DeserializeInner(typeof(TraceContext), context, reader);
 
                 if ((headers & Headers.INTERFACE_TYPE) != Headers.NONE)
                     result.InterfaceType = reader.ReadGrainInterfaceType();

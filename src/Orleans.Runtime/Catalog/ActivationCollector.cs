@@ -375,11 +375,8 @@ namespace Orleans.Runtime
             // note: we expect the activation lock to be held.
 
             item.ResetCollectionCancelledFlag();
-            Bucket bucket = 
-                buckets.GetOrAdd(
-                    ticket, 
-                    key => 
-                        new Bucket(key, quantum));
+            if (!buckets.TryGetValue(ticket, out var bucket))
+                bucket = buckets.GetOrAdd(ticket, new Bucket(ticket, quantum));
             bucket.Add(item);
             item.SetCollectionTicket(ticket);
         }

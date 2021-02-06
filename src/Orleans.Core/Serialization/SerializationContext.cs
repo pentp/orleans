@@ -129,12 +129,12 @@ namespace Orleans.Serialization
 
         public object DeepCopyInner(object original)
         {
-            return SerializationManager.DeepCopyInner(original, this);
+            return SerializationManager.DeepCopyInternal(original, this);
         }
 
         public void SerializeInner(object obj, Type expected)
         {
-            SerializationManager.SerializeInner(obj, this, expected);
+            SerializationManager.SerializeInner(obj, expected, this, StreamWriter);
         }
 
         internal class NestedSerializationContext : ISerializationContext
@@ -159,7 +159,7 @@ namespace Orleans.Serialization
             public object AdditionalContext => this.parentContext.ServiceProvider;
             public IBinaryTokenStreamWriter StreamWriter { get; }
             public int CurrentOffset => this.initialOffset + this.StreamWriter.CurrentOffset;
-            public void SerializeInner(object obj, Type expected) => SerializationManager.SerializeInner(obj, this, expected);
+            public void SerializeInner(object obj, Type expected) => parentContext.GetSerializationManager().SerializeInner(obj, expected, this, StreamWriter);
             public void RecordObject(object original, int offset) => this.parentContext.RecordObject(original, offset);
             public int CheckObjectWhileSerializing(object raw) => this.parentContext.CheckObjectWhileSerializing(raw);
         }

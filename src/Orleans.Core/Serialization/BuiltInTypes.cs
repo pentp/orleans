@@ -260,7 +260,7 @@ namespace Orleans.Serialization
         internal static void SerializeHashSet<T>(object obj, ISerializationContext context, Type expected)
         {
             var set = (HashSet<T>)obj;
-            SerializationManager.SerializeInner(set.Comparer.Equals(EqualityComparer<T>.Default) ? null : set.Comparer,
+            SerializationManager.SerializeInner(set.Comparer == EqualityComparer<T>.Default ? null : set.Comparer,
                 context, typeof(IEqualityComparer<T>));
             context.StreamWriter.Write(set.Count);
             foreach (var element in set)
@@ -330,7 +330,7 @@ namespace Orleans.Serialization
         internal static void SerializeSortedSet<T>(object obj, ISerializationContext context, Type expected)
         {
             var set = (SortedSet<T>)obj;
-            SerializationManager.SerializeInner(set.Comparer.Equals(Comparer<T>.Default) ? null : set.Comparer,
+            SerializationManager.SerializeInner(set.Comparer == Comparer<T>.Default ? null : set.Comparer,
                 context, typeof(IComparer<T>));
             context.StreamWriter.Write(set.Count);
             foreach (var element in set)
@@ -534,7 +534,7 @@ namespace Orleans.Serialization
         internal static void SerializeDictionary<K, V>(object original, ISerializationContext context, Type expected)
         {
             var dict = (Dictionary<K, V>)original;
-            SerializationManager.SerializeInner(dict.Comparer.Equals(EqualityComparer<K>.Default) ? null : dict.Comparer,
+            SerializationManager.SerializeInner(dict.Comparer == EqualityComparer<K>.Default ? null : dict.Comparer,
                                            context, typeof(IEqualityComparer<K>));
             context.StreamWriter.Write(dict.Count);
             foreach (var pair in dict)
@@ -646,7 +646,7 @@ namespace Orleans.Serialization
         internal static void SerializeStringObjectDictionary(object original, ISerializationContext context, Type expected)
         {
             var dict = (Dictionary<string, object>)original;
-            SerializationManager.SerializeInner(dict.Comparer.Equals(EqualityComparer<string>.Default) ? null : dict.Comparer,
+            SerializationManager.SerializeInner(dict.Comparer == EqualityComparer<string>.Default ? null : dict.Comparer,
                                            context, typeof(IEqualityComparer<string>));
             context.StreamWriter.Write(dict.Count);
             foreach (var pair in dict)
@@ -709,7 +709,7 @@ namespace Orleans.Serialization
         internal static void SerializeSortedDictionary<K, V>(object original, ISerializationContext context, Type expected)
         {
             var dict = (SortedDictionary<K, V>)original;
-            SerializationManager.SerializeInner(dict.Comparer.Equals(Comparer<K>.Default) ? null : dict.Comparer, context, typeof(IComparer<K>));
+            SerializationManager.SerializeInner(dict.Comparer == Comparer<K>.Default ? null : dict.Comparer, context, typeof(IComparer<K>));
             context.StreamWriter.Write(dict.Count);
             foreach (var pair in dict)
             {
@@ -774,7 +774,7 @@ namespace Orleans.Serialization
         internal static void SerializeSortedList<K, V>(object original, ISerializationContext context, Type expected)
         {
             var list = (SortedList<K, V>)original;
-            SerializationManager.SerializeInner(list.Comparer.Equals(Comparer<K>.Default) ? null : list.Comparer, context, typeof(IComparer<K>));
+            SerializationManager.SerializeInner(list.Comparer == Comparer<K>.Default ? null : list.Comparer, context, typeof(IComparer<K>));
             context.StreamWriter.Write(list.Count);
             foreach (var pair in list)
             {
@@ -844,8 +844,8 @@ namespace Orleans.Serialization
         internal static void SerializeImmutableDictionary<K, V>(object untypedInput, ISerializationContext context, Type typeExpected)
         {
             var dict = (ImmutableDictionary<K, V>)untypedInput;
-            SerializationManager.SerializeInner(dict.KeyComparer.Equals(EqualityComparer<K>.Default) ? null : dict.KeyComparer, context, typeof(IEqualityComparer<K>));
-            SerializationManager.SerializeInner(dict.ValueComparer.Equals(EqualityComparer<V>.Default) ? null : dict.ValueComparer, context, typeof(IEqualityComparer<V>));
+            SerializationManager.SerializeInner(dict.KeyComparer == EqualityComparer<K>.Default ? null : dict.KeyComparer, context, typeof(IEqualityComparer<K>));
+            SerializationManager.SerializeInner(dict.ValueComparer == EqualityComparer<V>.Default ? null : dict.ValueComparer, context, typeof(IEqualityComparer<V>));
 
             context.StreamWriter.Write(dict.Count);
             foreach (var pair in dict)
@@ -950,7 +950,7 @@ namespace Orleans.Serialization
         internal static void SerializeImmutableHashSet<K>(object untypedInput, ISerializationContext context, Type typeExpected)
         {
             var dict = (ImmutableHashSet<K>)untypedInput;
-            SerializationManager.SerializeInner(dict.KeyComparer.Equals(EqualityComparer<K>.Default) ? null : dict.KeyComparer, context, typeof(IEqualityComparer<K>));
+            SerializationManager.SerializeInner(dict.KeyComparer == EqualityComparer<K>.Default ? null : dict.KeyComparer, context, typeof(IEqualityComparer<K>));
 
             context.StreamWriter.Write(dict.Count);
             foreach (var pair in dict)
@@ -1003,7 +1003,7 @@ namespace Orleans.Serialization
         internal static void SerializeImmutableSortedSet<K>(object untypedInput, ISerializationContext context, Type typeExpected)
         {
             var dict = (ImmutableSortedSet<K>)untypedInput;
-            SerializationManager.SerializeInner(dict.KeyComparer.Equals(Comparer<K>.Default) ? null : dict.KeyComparer, context, typeof(IComparer<K>));
+            SerializationManager.SerializeInner(dict.KeyComparer == Comparer<K>.Default ? null : dict.KeyComparer, context, typeof(IComparer<K>));
 
             context.StreamWriter.Write(dict.Count);
             foreach (var pair in dict)
@@ -1056,8 +1056,8 @@ namespace Orleans.Serialization
         internal static void SerializeImmutableSortedDictionary<K, V>(object untypedInput, ISerializationContext context, Type typeExpected)
         {
             var dict = (ImmutableSortedDictionary<K, V>)untypedInput;
-            SerializationManager.SerializeInner(dict.KeyComparer.Equals(Comparer<K>.Default) ? null : dict.KeyComparer, context, typeof(IComparer<K>));
-            SerializationManager.SerializeInner(dict.ValueComparer.Equals(EqualityComparer<V>.Default) ? null : dict.ValueComparer, context, typeof(IEqualityComparer<V>));
+            SerializationManager.SerializeInner(dict.KeyComparer == Comparer<K>.Default ? null : dict.KeyComparer, context, typeof(IComparer<K>));
+            SerializationManager.SerializeInner(dict.ValueComparer == EqualityComparer<V>.Default ? null : dict.ValueComparer, context, typeof(IEqualityComparer<V>));
 
             context.StreamWriter.Write(dict.Count);
             foreach (var pair in dict)

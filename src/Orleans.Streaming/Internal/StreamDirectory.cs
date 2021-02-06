@@ -14,9 +14,9 @@ namespace Orleans.Streams
     {
         private readonly ConcurrentDictionary<InternalStreamId, object> allStreams = new ConcurrentDictionary<InternalStreamId, object>();
 
-        internal IAsyncStream<T> GetOrAddStream<T>(InternalStreamId streamId, Func<IAsyncStream<T>> streamCreator)
+        internal IAsyncStream<T> GetOrAddStream<T>(InternalStreamId streamId, Func<InternalStreamId, IAsyncStream<T>> streamCreator)
         {
-            var stream = allStreams.GetOrAdd(streamId, _ => streamCreator());
+            var stream = allStreams.GetOrAdd(streamId, streamCreator);
             var streamOfT = stream as IAsyncStream<T>;
             if (streamOfT == null)
             {

@@ -134,6 +134,20 @@ namespace Orleans.Utilities
         }
 
         /// <summary>
+        /// Adds a key/value pair to the <see cref="CachedReadConcurrentDictionary{TKey,TValue}"/> if the key does not already exist.
+        /// </summary>
+        /// <param name="key">The key of the element to add.</param>
+        /// <param name="value">the value to be added, if the key does not already exist</param>
+        /// <returns>The value for the key.  This will be either the existing value for the key if the
+        /// key is already in the dictionary, or the new value if the key was not in the dictionary.</returns>
+        public TValue GetOrAdd(TKey key, TValue value)
+        {
+            value = dictionary.GetOrAdd(key, value);
+            InvalidateCache();
+            return value;
+        }
+
+        /// <summary>
         /// Adds a key/value pair to the <see cref="CachedReadConcurrentDictionary{TKey,TValue}"/> if the key does not exist.
         /// </summary>
         /// <param name="key">The key of the element to add.</param>

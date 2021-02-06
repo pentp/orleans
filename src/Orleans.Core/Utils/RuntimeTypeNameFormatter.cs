@@ -40,14 +40,10 @@ namespace Orleans.Utilities
 
             if (!Cache.TryGetValue(type, out var result))
             {
-                string FormatType(Type t)
-                {
-                    var builder = new StringBuilder();
-                    Format(builder, t, isElementType: false);
-                    return builder.ToString();
-                }
-
-                result = Cache.GetOrAdd(type, FormatType);
+                var builder = new StringBuilder();
+                Format(builder, type, isElementType: false);
+                result = builder.ToString();
+                result = Cache.GetOrAdd(type, result);
             }
 
             return result;

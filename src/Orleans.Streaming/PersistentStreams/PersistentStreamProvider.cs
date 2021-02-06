@@ -114,7 +114,7 @@ namespace Orleans.Providers.Streams.Common
         {
             var id = new InternalStreamId(Name, streamId);
             return this.runtime.GetStreamDirectory().GetOrAddStream<T>(
-                id, () => new StreamImpl<T>(id, this, IsRewindable, this.runtimeClient));
+                id, id => new StreamImpl<T>(id, this, IsRewindable, this.runtimeClient));
         }
 
         IInternalAsyncBatchObserver<T> IInternalStreamProvider.GetProducerInterface<T>(IAsyncStream<T> stream)

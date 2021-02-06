@@ -31,7 +31,7 @@ namespace Orleans.Serialization
             if (!this.staticFields.TryGetValue(value, out result))
             {
                 result = CreateField(value, typeof(T));
-                this.staticFields.TryAdd(value, result);
+                result = this.staticFields.GetOrAdd(value, result);
             }
 
             return result;
@@ -50,7 +50,7 @@ namespace Orleans.Serialization
             if (!this.staticFields.TryGetValue(value, out result))
             {
                 result = CreateField(value, fieldType);
-                this.staticFields.TryAdd(value, result);
+                result = this.staticFields.GetOrAdd(value, result);
             }
 
             return result;

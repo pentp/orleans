@@ -135,13 +135,14 @@ namespace Orleans.ServiceBus.Providers.Testing
         /// <inheritdoc />
         public void StopProducingOnStream(StreamId streamId)
         {
-            this.generators.ForEach(generator => {
+            foreach(var generator in generators)
+            {
                 if (generator.StreamId.Equals(streamId))
                 {
                     generator.ShouldProduce = false;
                     this.logger.Info($"Stop producing data on stream {streamId}.");
                 }
-            });
+            }
         }
         /// <inheritdoc />
         public bool TryReadEvents(int maxCount, out IEnumerable<EventData> events)

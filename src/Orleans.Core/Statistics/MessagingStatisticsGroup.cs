@@ -171,7 +171,7 @@ namespace Orleans.Runtime
                 return stat;
             }
             stat = CounterStatistic.FindOrCreate(name, storage);
-            counters.TryAdd(name.Name, stat);
+            stat = counters.GetOrAdd(name.Name, stat);
             return stat;
         }
 

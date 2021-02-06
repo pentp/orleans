@@ -80,7 +80,7 @@ namespace Orleans.Serialization
 
         public object DeserializeInner(Type expected)
         {
-            return SerializationManager.DeserializeInner(expected, this);
+            return SerializationManager.DeserializeInner(expected, this, StreamReader);
         }
 
         internal class NestedDeserializationContext : IDeserializationContext
@@ -110,7 +110,7 @@ namespace Orleans.Serialization
             public void RecordObject(object obj, int offset) => this.parent.RecordObject(obj, offset);
             public void RecordObject(object obj) => this.RecordObject(obj, this.CurrentObjectOffset);
             public object FetchReferencedObject(int offset) => this.parent.FetchReferencedObject(offset);
-            public object DeserializeInner(Type expected) => SerializationManager.DeserializeInner(expected, this);
+            public object DeserializeInner(Type expected) => parent.GetSerializationManager().DeserializeInner(expected, this, StreamReader);
         }
     }
 }

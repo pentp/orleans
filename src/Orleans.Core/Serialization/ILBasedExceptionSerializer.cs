@@ -211,7 +211,7 @@ namespace Orleans.Serialization
                     actualType,
                     this.exceptionFieldFilter,
                     fieldComparer: ExceptionFieldInfoComparer.Instance);
-                this.serializers.TryAdd(actualType, methods);
+                methods = this.serializers.GetOrAdd(actualType, methods);
             }
 
             return methods;

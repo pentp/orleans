@@ -178,18 +178,16 @@ namespace Orleans.Runtime.GrainDirectory
             {
                 if (logger.IsEnabled(LogLevel.Debug)) logger.Debug("Removing " + splitPartListSingle.Count + " single activation after partition split");
 
-                splitPartListSingle.ForEach(
-                    activationAddress =>
-                        localDirectory.DirectoryPartition.RemoveGrain(activationAddress.Grain));
+                foreach (var activationAddress in splitPartListSingle)
+                    localDirectory.DirectoryPartition.RemoveGrain(activationAddress.Grain);
             }
 
             if (splitPartListMulti.Count > 0)
             {
                 if (logger.IsEnabled(LogLevel.Debug)) logger.Debug("Removing " + splitPartListMulti.Count + " multiple activation after partition split");
 
-                splitPartListMulti.ForEach(
-                    activationAddress =>
-                        localDirectory.DirectoryPartition.RemoveGrain(activationAddress.Grain));
+                foreach (var activationAddress in splitPartListMulti)
+                    localDirectory.DirectoryPartition.RemoveGrain(activationAddress.Grain);
             }
         }
 

@@ -148,7 +148,7 @@ namespace Orleans.Runtime.Messaging
                 reader.PartialReset(input);
                 try
                 {
-                    value = (T)SerializationManager.DeserializeInner(this.serializationManager, typeof(T), this.deserializationContext, this.reader);
+                    value = (T)serializationManager.DeserializeInner(typeof(T), this.deserializationContext, this.reader);
                 }
                 finally
                 {
@@ -170,7 +170,7 @@ namespace Orleans.Runtime.Messaging
 
                 try
                 {
-                    SerializationManager.SerializeInner(this.serializationManager, value, typeof(T), this.serializationContext, writer);
+                    serializationManager.SerializeInner(value, typeof(T), this.serializationContext, writer);
                 }
                 finally
                 {

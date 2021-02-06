@@ -479,11 +479,11 @@ namespace Orleans.Streams
             if (pubSubCache.Count == 0) return;
             var toRemove = pubSubCache.Where(pair => pair.Value.IsInactive(now, this.options.StreamInactivityPeriod))
                          .ToList();
-            toRemove.ForEach(tuple =>
+            foreach(var tuple in toRemove)
             {
                 pubSubCache.Remove(tuple.Key);
                 tuple.Value.DisposeAll(logger);
-            });
+            }
         }
 
         private async Task RegisterStream(InternalStreamId streamId, StreamSequenceToken firstToken, DateTime now)

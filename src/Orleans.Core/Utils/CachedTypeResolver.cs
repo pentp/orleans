@@ -47,7 +47,7 @@ namespace Orleans.Runtime
 
         private void AddTypeToCache(string name, Type type)
         {
-            var entry = this.typeCache.GetOrAdd(name, _ => type);
+            var entry = this.typeCache.GetOrAdd(name, type);
             if (!ReferenceEquals(entry, type)) throw new InvalidOperationException("inconsistent type name association");
         }
 

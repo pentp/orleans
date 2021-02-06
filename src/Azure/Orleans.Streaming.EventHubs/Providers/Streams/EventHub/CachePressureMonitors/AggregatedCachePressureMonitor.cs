@@ -1,4 +1,4 @@
-﻿using Orleans.Providers.Streams.Common;
+using Orleans.Providers.Streams.Common;
 using Orleans.Runtime;
 using System;
 using System.Collections.Generic;
@@ -37,10 +37,10 @@ namespace Orleans.ServiceBus.Providers
         /// <param name="cachePressureContribution"></param>
         public void RecordCachePressureContribution(double cachePressureContribution)
         {
-            this.ForEach(monitor =>
+            foreach(var monitor in this)
             {
                 monitor.RecordCachePressureContribution(cachePressureContribution);
-            });
+            }
         }
 
         /// <summary>

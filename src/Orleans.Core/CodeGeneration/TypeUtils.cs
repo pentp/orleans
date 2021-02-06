@@ -638,7 +638,9 @@ namespace Orleans.Runtime
             // If a naming function has been specified, skip the cache.
             if (getNameFunc != null) return BuildParseableName();
 
-            return ParseableNameCache.GetOrAdd(Tuple.Create(type, options), _ => BuildParseableName());
+            var key = Tuple.Create(type, options);
+            return ParseableNameCache.TryGetValue(key, out var name) ? name
+                : ParseableNameCache.GetOrAdd(key, BuildParseableName());
 
             string BuildParseableName()
             {
@@ -973,7 +975,7 @@ namespace Orleans.Runtime
             if (!ReferencedTypes.TryGetValue(key, out results))
             {
                 results = GetTypes(type, includeMethods, null).ToList();
-                ReferencedTypes.TryAdd(key, results);
+                results = ReferencedTypes.GetOrAdd(key, results);
             }
 
             return results;
