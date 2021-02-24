@@ -260,7 +260,7 @@ namespace Orleans.Runtime.Management
             {
                 actionPromises.Add(func(GetSiloControlReference(s), strategy));
             }
-            var task = await Task.WhenAll(actionPromises).SuppressExceptions();
+            var task = await Task.WhenAll(actionPromises).NoThrow();
             // exceptions ignored: silos that failed to set the new strategy will reload it from the storage in the future.
             _ = task.Exception;
         }

@@ -370,19 +370,63 @@ namespace Orleans.Internal
         }
 
         /// <summary>
+        /// For making an uncancellable task cancellable, by returning an awaitable that is completed when the given task completes or the token is canceled.
+        /// Does not throw exceptions, the caller is responsible for observing any exceptions if necessary.
+        /// </summary>
+        internal static WhenCompletedOrCanceledAwaiter WhenCompletedOrCanceled(this Task taskToComplete, CancellationToken token) => new(taskToComplete, token);
+
+        public readonly struct WhenCompletedOrCanceledAwaiter : ICriticalNotifyCompletion
+        {
+            private readonly Task _task;
+            private readonly CancellationToken _token;
+
+            public WhenCompletedOrCanceledAwaiter(Task task, CancellationToken token)
+            {
+                _task = task;
+                _token = token;
+            }
+
+            public WhenCompletedOrCanceledAwaiter GetAwaiter() => this;
+            public bool IsCompleted => _task.IsCompleted || _token.IsCancellationRequested;
+            public Task GetResult() => _task;
+            void INotifyCompletion.OnCompleted(Action action) => throw new NotSupportedException();
+
+            public void UnsafeOnCompleted(Action action)
+            {
+                if (_token.CanBeCanceled)
+                {
+                    var cont = new Continuation { Action = action };
+                    cont.Registration = _token.UnsafeRegister(s => ThreadPool.UnsafeQueueUserWorkItem((Continuation)s, true), cont);
+                    action = cont.MoveNext;
+                }
+                _task.GetAwaiter().UnsafeOnCompleted(action);
+            }
+
+            private sealed class Continuation : IThreadPoolWorkItem
+            {
+                public Action Action;
+                public CancellationTokenRegistration Registration;
+
+                public void Execute() => MoveNext(false);
+                public void MoveNext() => MoveNext(true);
+
+                private void MoveNext(bool unregister)
+                {
+                    if (Interlocked.Exchange(ref Action, null) is { } action)
+                    {
+                        // reset resources before executing the callback - in case of cancellation the original task could hold a reference to this continuation for a long time
+                        if (unregister) Registration.Unregister();
+                        Registration = default;
+                        action();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Returns an awaitable that suppresses exceptions, but still observes them.
         /// </summary>
         public static IgnoreExceptionsAwaiter IgnoreExceptions(this Task task) => new(task);
-
-        /// <summary>
-        /// Returns an awaitable that suppresses exceptions.
-        /// </summary>
-        public static SuppressExceptionsAwaiter SuppressExceptions(this Task task) => new(task);
-
-        /// <summary>
-        /// Returns an awaitable that suppresses exceptions and runs continuations on the default scheduler.
-        /// </summary>
-        public static SuppressExceptionsCfgAwaiter SuppressExceptionsAndContext(this Task task) => new(task);
 
         public readonly struct IgnoreExceptionsAwaiter : ICriticalNotifyCompletion
         {
@@ -392,25 +436,37 @@ namespace Orleans.Internal
             public bool IsCompleted => _task.IsCompleted;
             public void OnCompleted(Action action) => _task.GetAwaiter().OnCompleted(action);
             public void UnsafeOnCompleted(Action action) => _task.GetAwaiter().UnsafeOnCompleted(action);
-            public void GetResult() => _ = _task.Exception;
+            public void GetResult() => _ = _task.Exception; // observe exceptions
         }
 
-        public readonly struct SuppressExceptionsAwaiter : ICriticalNotifyCompletion
+        /// <summary>
+        /// Returns an awaitable that does not throw exceptions.
+        /// The caller is responsible for observing any exceptions if necessary.
+        /// </summary>
+        public static NoThrowAwaiter NoThrow(this Task task) => new(task);
+
+        /// <summary>
+        /// Returns an awaitable that does not throw exceptions and runs continuations on the default scheduler.
+        /// The caller is responsible for observing any exceptions if necessary.
+        /// </summary>
+        public static NoThrowCfgAwaiter NoThrowDefaultScheduler(this Task task) => new(task);
+
+        public readonly struct NoThrowAwaiter : ICriticalNotifyCompletion
         {
             private readonly Task _task;
-            public SuppressExceptionsAwaiter(Task task) => _task = task;
-            public SuppressExceptionsAwaiter GetAwaiter() => this;
+            public NoThrowAwaiter(Task task) => _task = task;
+            public NoThrowAwaiter GetAwaiter() => this;
             public bool IsCompleted => _task.IsCompleted;
             public void OnCompleted(Action action) => _task.GetAwaiter().OnCompleted(action);
             public void UnsafeOnCompleted(Action action) => _task.GetAwaiter().UnsafeOnCompleted(action);
             public Task GetResult() => _task;
         }
 
-        public readonly struct SuppressExceptionsCfgAwaiter : ICriticalNotifyCompletion
+        public readonly struct NoThrowCfgAwaiter : ICriticalNotifyCompletion
         {
             private readonly Task _task;
-            public SuppressExceptionsCfgAwaiter(Task task) => _task = task;
-            public SuppressExceptionsCfgAwaiter GetAwaiter() => this;
+            public NoThrowCfgAwaiter(Task task) => _task = task;
+            public NoThrowCfgAwaiter GetAwaiter() => this;
             public bool IsCompleted => _task.IsCompleted;
             public void OnCompleted(Action action) => _task.ConfigureAwait(false).GetAwaiter().OnCompleted(action);
             public void UnsafeOnCompleted(Action action) => _task.ConfigureAwait(false).GetAwaiter().UnsafeOnCompleted(action);

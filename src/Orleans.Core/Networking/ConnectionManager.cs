@@ -294,12 +294,15 @@ namespace Orleans.Runtime.Messaging
 
                     if (closeTasks.Count > 0)
                     {
-                        await Task.WhenAny(Task.WhenAll(closeTasks), ct.WhenCancelled());
+                        var task = closeTasks.Count == 1 ? closeTasks[0] : Task.WhenAll(closeTasks);
+                        await task.WhenCompletedOrCanceled(ct);
                         if (ct.IsCancellationRequested) break;
                     }
                     else if (!pendingConnections) break;
 
-                    await Task.Delay(10);
+                    await Task.Delay(10, ct).NoThrow();
+                    if (ct.IsCancellationRequested) break;
+
                     if (++cycles > 100 && cycles % 500 == 0 && this.ConnectionCount is var remaining and > 0)
                     {
                         this.trace?.LogWarning("Waiting for {NumRemaining} connections to terminate", remaining);

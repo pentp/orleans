@@ -395,7 +395,7 @@ namespace Orleans.Streams
                               .Contains(base.SiloAddress);
         }
 
-        private async Task UpdateResponsibilities(HashSet<SiloAddress> activeSilos)
+        private Task UpdateResponsibilities(HashSet<SiloAddress> activeSilos)
         {
             if (base.Cancellation.IsCancellationRequested) return;
             var activeSiloCount = Math.Max(1, activeSilos.Count);
@@ -432,7 +432,7 @@ namespace Orleans.Streams
                     this.options.LeaseRenewPeriod);
             }
 
-            await this.AcquireLeasesToMeetResponsibility();
+            return this.AcquireLeasesToMeetResponsibility();
         }
     }
 }

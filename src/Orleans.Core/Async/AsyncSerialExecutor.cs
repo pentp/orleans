@@ -53,19 +53,19 @@ namespace Orleans
 
         private async Task ExecuteNext(Task running = null)
         {
-            while (running != null || locker.TryGetLock())
+            while (running != null || !actions.IsEmpty && locker.TryGetLock())
                 try
                 {
                     if (running != null)
                     {
-                        await running.SuppressExceptions();
+                        await running.NoThrow();
                         running = null;
                     }
 
                     while (actions.TryDequeue(out var action))
                     {
                         action.Task.Start();
-                        await action.Result.SuppressExceptions();
+                        await action.Result.NoThrow();
                     }
                 }
                 finally

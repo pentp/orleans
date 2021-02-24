@@ -264,7 +264,7 @@ namespace Orleans.Streams
             // Need to call it as a grain reference.
             var task = OrleansTaskExtentions.SafeExecute(() => agentGrainRef.Initialize(queueAdapter.AsImmutable(), queueAdapterCacheAsImmutable, deliveryFailureHandler.AsImmutable()));
             task = task.LogException(ex => logger.Error(ErrorCode.PersistentStreamPullingManager_09, $"PersistentStreamPullingAgent {agent.QueueId} failed to Initialize.", ex));
-            await task.SuppressExceptions();
+            await task.NoThrow();
         }
 
         private async Task RemoveQueues(List<QueueId> queuesToRemove)

@@ -114,7 +114,7 @@ namespace Orleans.Runtime.MembershipService
         /// <summary>
         /// Stop the monitor.
         /// </summary>
-        public async Task StopAsync(CancellationToken cancellationToken)
+        public Task StopAsync(CancellationToken cancellationToken)
         {
             lock (_lockObj)
             {
@@ -127,10 +127,7 @@ namespace Orleans.Runtime.MembershipService
                 _pingTimer.Dispose();
             }
 
-            if (_runTask is Task task)
-            {
-                await Task.WhenAny(task, cancellationToken.WhenCancelled());
-            }
+            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, cancellationToken.WhenCancelled()) : Task.CompletedTask;
         }
 
         private async Task Run()

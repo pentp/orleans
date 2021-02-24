@@ -144,7 +144,7 @@ namespace Orleans.Streams
             Task localReceiverInitTask = receiverInitTask;
             if (localReceiverInitTask != null)
             {
-                await localReceiverInitTask.SuppressExceptions();
+                await localReceiverInitTask.NoThrow();
                 receiverInitTask = null;
             }
 
@@ -156,7 +156,7 @@ namespace Orleans.Streams
                 {
                     var task = OrleansTaskExtentions.SafeExecute(() => localReceiver.Shutdown(this.options.InitQueueTimeout))
                         .LogException(ex => logger.Error(ErrorCode.PersistentStreamPullingAgent_07, $"QueueAdapterReceiver {QueueId} failed to Shutdown.", ex));
-                    await task.SuppressExceptions();
+                    await task.NoThrow();
                 }
             }
             catch
