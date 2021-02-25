@@ -353,11 +353,8 @@ namespace Orleans.Internal
             }
 
             var waitForCancellation = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-            token.Register(obj =>
-            {
-                var tcs = (TaskCompletionSource<object>)obj;
-                tcs.TrySetResult(null);
-            }, waitForCancellation);
+            // TODO: this leaks registrations when used together with Task.WhenAny...
+            token.UnsafeRegister(s => ((TaskCompletionSource<object>)s).TrySetResult(null), waitForCancellation);
 
             return waitForCancellation.Task;
         }
@@ -371,7 +368,7 @@ namespace Orleans.Internal
 
         /// <summary>
         /// For making an uncancellable task cancellable, by returning an awaitable that is completed when the given task completes or the token is canceled.
-        /// Does not throw exceptions, the caller is responsible for observing any exceptions if necessary.
+        /// Does not throw exceptions. The caller is responsible for observing any exceptions if necessary.
         /// </summary>
         internal static WhenCompletedOrCanceledAwaiter WhenCompletedOrCanceled(this Task taskToComplete, CancellationToken token) => new(taskToComplete, token);
 
@@ -420,6 +417,15 @@ namespace Orleans.Internal
                         action();
                     }
                 }
+            }
+
+            public Task AsTask()
+            {
+                if (_task is { IsCompleted: false } t && !_token.IsCancellationRequested)
+                {
+                    return _token.CanBeCanceled ? Task.WhenAny(t, _token.WhenCancelled()) : Task.WhenAny(t);
+                }
+                return Task.CompletedTask;
             }
         }
 

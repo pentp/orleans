@@ -98,7 +98,7 @@ namespace Orleans.Runtime.Utilities
 
         private sealed class AsyncEnumerator : IAsyncEnumerator<T>
         {
-            private readonly Task cancellation;
+            private readonly CancellationToken cancellation;
             private Element current;
 
             public AsyncEnumerator(Element initial, CancellationToken cancellation)
@@ -111,29 +111,17 @@ namespace Orleans.Runtime.Utilities
                     this.current = result;
                 }
 
-                if (cancellation != default)
-                {
-                    this.cancellation = cancellation.WhenCancelled();
-                }
+                this.cancellation = cancellation;
             }
 
             T IAsyncEnumerator<T>.Current => this.current.Value;
 
             async ValueTask<bool> IAsyncEnumerator<T>.MoveNextAsync()
             {
-                Task<Element> next;
-                if (this.cancellation != default)
-                {
-                    next = this.current.NextAsync();
-                    var result = await Task.WhenAny(this.cancellation, next);
-                    if (ReferenceEquals(result, this.cancellation)) return false;
-                }
-                else
-                {
-                    next = this.current.NextAsync();
-                }
-
-                this.current = await next;
+                var next = this.current.NextAsync();
+                await next.WhenCompletedOrCanceled(cancellation);
+                if (!next.IsCompleted) return false;
+                current = next.GetAwaiter().GetResult();
                 return this.current.IsValid;
             }
 

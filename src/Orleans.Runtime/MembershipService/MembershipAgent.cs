@@ -208,17 +208,11 @@ namespace Orleans.Runtime.MembershipService
                 var timeout = this.clusterMembershipOptions.ProbeTimeout;
                 foreach (var silo in members)
                 {
-                    tasks.Add(ProbeSilo(this.siloProber, silo, timeout, this.log));
+                    tasks.Add(ProbeSilo(silo, timeout));
                 }
 
-                try
-                {
-                    await Task.WhenAll(tasks);
-                }
-                catch
-                {
-                    // Ignore exceptions for now.
-                }
+                await Task.WhenAll(tasks).NoThrow();
+                // Ignore exceptions for now.
 
                 var failed = new List<SiloAddress>();
                 for (var i = 0; i < tasks.Count; i++)
@@ -232,35 +226,23 @@ namespace Orleans.Runtime.MembershipService
                 return failed;
             }
 
-            static async Task<bool> ProbeSilo(IRemoteSiloProber siloProber, SiloAddress silo, TimeSpan timeout, ILogger log)
+            async Task<bool> ProbeSilo(SiloAddress silo, TimeSpan timeout)
             {
-                Exception exception;
+                Exception exception = null;
                 try
                 {
                     using var cancellation = new CancellationTokenSource(timeout);
-                    var probeTask = siloProber.Probe(silo, 0);
-                    var cancellationTask = cancellation.Token.WhenCancelled();
-                    var completedTask = await Task.WhenAny(probeTask, cancellationTask).ConfigureAwait(false);
+                    var probeTask = await siloProber.Probe(silo, 0).WhenCompletedOrCanceled(cancellation.Token);
+                    if (probeTask.IsCompletedSuccessfully)
+                        return true;
 
-                    if (ReferenceEquals(completedTask, probeTask))
+                    if (!probeTask.IsCompleted)
                     {
-                        cancellation.Cancel();
-                        if (probeTask.IsFaulted)
-                        {
-                            exception = probeTask.Exception;
-                        }
-                        else if (probeTask.Status == TaskStatus.RanToCompletion)
-                        {
-                            return true;
-                        }
-                        else
-                        {
-                            exception = null;
-                        }
+                        probeTask.Ignore();
                     }
                     else
                     {
-                        exception = null;
+                        exception = probeTask.Exception.Unwrap();
                     }
                 }
                 catch (Exception ex)

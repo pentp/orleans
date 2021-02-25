@@ -26,7 +26,7 @@ namespace Orleans.Runtime.GrainDirectory
     /// has updated.
     /// The process of removing defunct clients is left to the <see cref="IConnectedClientCollection"/> implementation on each silo.
     /// </remarks>
-    internal sealed class ClientDirectory : SystemTarget, ILocalClientDirectory, IRemoteClientDirectory, ILifecycleParticipant<ISiloLifecycle>
+    internal sealed class ClientDirectory : SystemTarget, ILocalClientDirectory, IRemoteClientDirectory, ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver
     {
         private readonly SimpleConsistentRingProvider _consistentRing;
         private readonly IInternalGrainFactory _grainFactory;
@@ -361,7 +361,7 @@ namespace Orleans.Runtime.GrainDirectory
 
                 if (timerTask.IsCompleted)
                 {
-                    if (!await timerTask)
+                    if (!timerTask.GetAwaiter().GetResult())
                     {
                         break;
                     }
@@ -371,7 +371,7 @@ namespace Orleans.Runtime.GrainDirectory
 
                 if (membershipTask.IsCompleted)
                 {
-                    if (!await membershipTask)
+                    if (!membershipTask.GetAwaiter().GetResult())
                     {
                         break;
                     }
@@ -517,24 +517,20 @@ namespace Orleans.Runtime.GrainDirectory
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            lifecycle.Subscribe(
-                nameof(ClientDirectory),
-                ServiceLifecycleStage.RuntimeGrainServices,
-                ct =>
-                {
-                    this.ScheduleTask(() => _runTask = this.Run()).Ignore();
-                    return Task.CompletedTask;
-                },
-                async ct =>
-                {
-                    _shutdownCancellation.Cancel();
-                    _refreshTimer?.Dispose();
+            lifecycle.Subscribe(nameof(ClientDirectory), ServiceLifecycleStage.RuntimeGrainServices, this);
+        }
 
-                    if (_runTask is Task task)
-                    {
-                        await Task.WhenAny(ct.WhenCancelled(), task);
-                    }
-                });
+        Task ILifecycleObserver.OnStart(CancellationToken ct)
+        {
+            this.ScheduleTask(() => _runTask = this.Run()).Ignore();
+            return Task.CompletedTask;
+        }
+
+        Task ILifecycleObserver.OnStop(CancellationToken ct)
+        {
+            _shutdownCancellation.Cancel();
+            _refreshTimer?.Dispose();
+            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, ct.WhenCancelled()) : Task.CompletedTask;
         }
 
         internal class TestAccessor

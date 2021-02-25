@@ -18,9 +18,8 @@ namespace Orleans.Runtime
     /// <summary>
     /// A client which is hosted within a silo.
     /// </summary>
-    internal sealed class HostedClient : IGrainContext, IGrainExtensionBinder, IDisposable, ILifecycleParticipant<ISiloLifecycle>
+    internal sealed class HostedClient : IGrainContext, IGrainExtensionBinder, IDisposable, ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver
     {
-        private readonly object lockObj = new object();
         private readonly Channel<Message> incomingMessages;
         private readonly IGrainReferenceRuntime grainReferenceRuntime;
         private readonly InvokableObjectManager invokableObjects;
@@ -29,7 +28,7 @@ namespace Orleans.Runtime
         private readonly IInternalGrainFactory grainFactory;
         private readonly MessageCenter siloMessageCenter;
         private readonly MessagingTrace messagingTrace;
-        private readonly ConcurrentDictionary<Type, (object Implementation, IAddressable Reference)> _extensions = new ConcurrentDictionary<Type, (object, IAddressable)>();
+        private readonly ConcurrentDictionary<Type, (object Implementation, IAddressable Reference)> _extensions = new();
         private bool disposing;
         private Task messagePump;
 
@@ -225,36 +224,36 @@ namespace Orleans.Runtime
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            lifecycle.Subscribe("HostedClient", ServiceLifecycleStage.RuntimeGrainServices, OnStart, OnStop);
+            lifecycle.Subscribe(nameof(HostedClient), ServiceLifecycleStage.RuntimeGrainServices, this);
+        }
 
-            Task OnStart(CancellationToken cancellation)
+        Task ILifecycleObserver.OnStart(CancellationToken cancellation)
+        {
+            if (cancellation.IsCancellationRequested) return Task.CompletedTask;
+
+            // Register with the message center so that we can receive messages.
+            this.siloMessageCenter.SetHostedClient(this);
+
+            // Start pumping messages.
+            this.Start();
+
+            var clusterClient = this.runtimeClient.ServiceProvider.GetRequiredService<IClusterClient>();
+            return clusterClient.Connect();
+        }
+
+        async Task ILifecycleObserver.OnStop(CancellationToken cancellation)
+        {
+            this.incomingMessages.Writer.TryComplete();
+
+            if (this.messagePump != null)
             {
-                if (cancellation.IsCancellationRequested) return Task.CompletedTask;
-
-                // Register with the message center so that we can receive messages.
-                this.siloMessageCenter.SetHostedClient(this);
-
-                // Start pumping messages.
-                this.Start();
-
-                var clusterClient = this.runtimeClient.ServiceProvider.GetRequiredService<IClusterClient>();
-                return clusterClient.Connect();
+                await messagePump.WhenCompletedOrCanceled(cancellation);
             }
 
-            async Task OnStop(CancellationToken cancellation)
-            {
-                this.incomingMessages.Writer.TryComplete();
+            if (cancellation.IsCancellationRequested) return;
 
-                if (this.messagePump != null)
-                {
-                    await Task.WhenAny(cancellation.WhenCancelled(), this.messagePump);
-                }
-
-                if (cancellation.IsCancellationRequested) return;
-
-                var clusterClient = this.runtimeClient.ServiceProvider.GetRequiredService<IClusterClient>();
-                await clusterClient.Close();
-            }
+            var clusterClient = this.runtimeClient.ServiceProvider.GetRequiredService<IClusterClient>();
+            await clusterClient.Close();
         }
 
         public bool Equals(IGrainContext other) => ReferenceEquals(this, other);
@@ -269,7 +268,7 @@ namespace Orleans.Runtime
                 return result;
             }
 
-            lock (this.lockObj)
+            lock (_extensions)
             {
                 if (this.TryGetExtension(out result))
                 {
@@ -324,7 +323,7 @@ namespace Orleans.Runtime
                 return result;
             }
 
-            lock (this.lockObj)
+            lock (_extensions)
             {
                 if (this.TryGetExtension(out result))
                 {

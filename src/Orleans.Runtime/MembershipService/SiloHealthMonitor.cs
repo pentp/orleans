@@ -120,14 +120,18 @@ namespace Orleans.Runtime.MembershipService
             {
                 if (_stoppingCancellation.IsCancellationRequested)
                 {
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 _stoppingCancellation.Cancel();
                 _pingTimer.Dispose();
             }
 
-            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, cancellationToken.WhenCancelled()) : Task.CompletedTask;
+            if (_runTask is { IsCompleted: false } task)
+            {
+                return Task.WhenAny(task, cancellationToken.WhenCancelled());
+            }
+            return Task.CompletedTask;
         }
 
         private async Task Run()
@@ -155,7 +159,7 @@ namespace Orleans.Runtime.MembershipService
 
                     var isDirectProbe = !_clusterMembershipOptions.CurrentValue.EnableIndirectProbes || _failedProbes < _clusterMembershipOptions.CurrentValue.NumMissedProbesLimit - 1 || otherNodes.Length == 0;
                     var timeout = GetTimeout(isDirectProbe);
-                    var cancellation = new CancellationTokenSource(timeout);
+                    using var cancellation = new CancellationTokenSource(timeout);
 
                     if (isDirectProbe)
                     {
@@ -232,19 +236,15 @@ namespace Orleans.Runtime.MembershipService
             Exception failureException;
             try
             {
-                var probeCancellation = cancellation.WhenCancelled();
-                var probeTask = _prober.Probe(SiloAddress, id);
-                var task = await Task.WhenAny(probeCancellation, probeTask);
-
-                if (ReferenceEquals(task, probeCancellation) && probeTask.Status != TaskStatus.RanToCompletion)
+                var probeTask = await _prober.Probe(SiloAddress, id).WhenCompletedOrCanceled(cancellation);
+                if (!probeTask.IsCompleted)
                 {
                     probeTask.Ignore();
                     failureException = new OperationCanceledException($"The ping attempt was cancelled after {roundTripTimer.Elapsed}. Ping #{id}");
                 }
                 else
                 {
-                    await probeTask;
-                    failureException = null;
+                    failureException = probeTask.Exception.Unwrap();
                 }
             }
             catch (Exception exception)
@@ -313,19 +313,18 @@ namespace Orleans.Runtime.MembershipService
             ProbeResult probeResult;
             try
             {
-                using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellation, _stoppingCancellation.Token);
-                var cancellationTask = cancellationSource.Token.WhenCancelled();
                 var probeTask = _prober.ProbeIndirectly(intermediary, SiloAddress, directProbeTimeout, id);
-                var task = await Task.WhenAny(cancellationTask, probeTask);
+                using (var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation, _stoppingCancellation.Token))
+                    await probeTask.WhenCompletedOrCanceled(cts.Token);
 
-                if (ReferenceEquals(task, cancellationTask) && probeTask.Status != TaskStatus.RanToCompletion)
+                if (!probeTask.IsCompleted)
                 {
                     probeTask.Ignore();
                     probeResult = ProbeResult.CreateIndirect(_failedProbes, ProbeResultStatus.Unknown, default);
                 }
                 else
                 {
-                    var indirectResult = await probeTask;
+                    var indirectResult = probeTask.GetAwaiter().GetResult();
                     roundTripTimer.Stop();
                     var roundTripTime = roundTripTimer.Elapsed - indirectResult.ProbeResponseTime;
 

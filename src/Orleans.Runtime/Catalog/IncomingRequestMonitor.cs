@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
@@ -11,7 +12,7 @@ namespace Orleans.Runtime
     /// <summary>
     /// Monitors currently-active requests and sends status notifications to callers for long-running and blocked requests.
     /// </summary>
-    internal sealed class IncomingRequestMonitor : ILifecycleParticipant<ISiloLifecycle>
+    internal sealed class IncomingRequestMonitor : ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver
     {
         private static readonly TimeSpan DefaultAnalysisPeriod = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan InactiveGrainIdleness = TimeSpan.FromMinutes(1);
@@ -19,7 +20,7 @@ namespace Orleans.Runtime
         private readonly IMessageCenter _messageCenter;
         private readonly MessageFactory _messageFactory;
         private readonly IOptionsMonitor<SiloMessagingOptions> _messagingOptions;
-        private readonly ConcurrentDictionary<ActivationData, ActivationData> _recentlyUsedActivations = new ConcurrentDictionary<ActivationData, ActivationData>(ReferenceEqualsComparer<ActivationData>.Instance);
+        private readonly ConcurrentDictionary<ActivationData, object> _recentlyUsedActivations = new(ReferenceEqualsComparer<ActivationData>.Instance);
         private bool _enabled = true;
         private Task _runTask;
 
@@ -43,24 +44,24 @@ namespace Orleans.Runtime
                 return;
             }
             
-            _recentlyUsedActivations.TryAdd(activation, activation);
+            _recentlyUsedActivations.TryAdd(activation, null);
         }
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            lifecycle.Subscribe(
-                nameof(IncomingRequestMonitor),
-                ServiceLifecycleStage.BecomeActive,
-                ct =>
-                {
-                    _runTask = Task.Run(this.Run);
-                    return Task.CompletedTask;
-                },
-                async ct =>
-                {
-                    _scanPeriodTimer.Dispose();
-                    if (_runTask is Task task) await Task.WhenAny(task, ct.WhenCancelled());
-                });
+            lifecycle.Subscribe(nameof(IncomingRequestMonitor), ServiceLifecycleStage.BecomeActive, this);
+        }
+
+        Task ILifecycleObserver.OnStart(CancellationToken ct)
+        {
+            _runTask = Task.Run(this.Run);
+            return Task.CompletedTask;
+        }
+
+        Task ILifecycleObserver.OnStop(CancellationToken ct)
+        {
+            _scanPeriodTimer.Dispose();
+            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, ct.WhenCancelled()) : Task.CompletedTask;
         }
 
         private async Task Run()
@@ -97,7 +98,7 @@ namespace Orleans.Runtime
                 var now = DateTime.UtcNow;
                 foreach (var activationEntry in _recentlyUsedActivations)
                 {
-                    var activation = activationEntry.Value;
+                    var activation = activationEntry.Key;
                     lock (activation)
                     {
                         if (activation.IsInactive && activation.GetIdleness(now) > InactiveGrainIdleness)

@@ -64,41 +64,39 @@ namespace Orleans.Runtime
             try
             {
                 var grainFactory = _services.GetRequiredService<IInternalGrainFactory>();
-                var cancellationTask = _cancellation.Token.WhenCancelled();
                 while (!_cancellation.IsCancellationRequested)
                 {
                     var gateway = _gatewayManager.GetLiveGateway();
+                    TimeSpan wait;
                     try
                     {
                         var provider = grainFactory.GetGrain<IClusterManifestSystemTarget>(SystemTargetGrainId.Create(Constants.ManifestProviderType, gateway).GrainId);
                         var refreshTask = provider.GetClusterManifest().AsTask();
-                        var task = await Task.WhenAny(cancellationTask, refreshTask).ConfigureAwait(false);
+                        await refreshTask.WhenCompletedOrCanceled(_cancellation.Token);
 
-                        if (ReferenceEquals(task, cancellationTask))
+                        if (!refreshTask.IsCompleted)
                         {
+                            refreshTask.Ignore();
                             return;
                         }
 
-                        if (!_updates.TryPublish(await refreshTask))
+                        if (!_updates.TryPublish(refreshTask.GetAwaiter().GetResult()))
                         {
-                            await Task.Delay(StandardExtensions.Min(_typeManagementOptions.TypeMapRefreshInterval, TimeSpan.FromMilliseconds(500)));
-                            continue;
+                            wait = StandardExtensions.Min(_typeManagementOptions.TypeMapRefreshInterval, TimeSpan.FromMilliseconds(500));
                         }
-
-                        _initialized.TrySetResult(true);
-
-                        if (_logger.IsEnabled(LogLevel.Debug))
+                        else
                         {
-                            _logger.LogDebug("Refreshed cluster manifest");
+                            _initialized.TrySetResult(true);
+                            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Refreshed cluster manifest");
+                            wait = _typeManagementOptions.TypeMapRefreshInterval;
                         }
-
-                        await Task.WhenAny(cancellationTask, Task.Delay(_typeManagementOptions.TypeMapRefreshInterval));
                     }
                     catch (Exception exception)
                     {
                         _logger.LogWarning(exception, "Error trying to get cluster manifest from gateway {Gateway}", gateway);
-                        await Task.Delay(StandardExtensions.Min(_typeManagementOptions.TypeMapRefreshInterval, TimeSpan.FromSeconds(5)));
+                        wait = StandardExtensions.Min(_typeManagementOptions.TypeMapRefreshInterval, TimeSpan.FromSeconds(5));
                     }
+                    await Task.Delay(wait, _cancellation.Token).NoThrow();
                 }
             }
             finally

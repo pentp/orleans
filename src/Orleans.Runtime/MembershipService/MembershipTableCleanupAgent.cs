@@ -11,12 +11,13 @@ namespace Orleans.Runtime.MembershipService
     /// <summary>
     /// Responsible for cleaning up dead membership table entries.
     /// </summary>
-    internal class MembershipTableCleanupAgent : IHealthCheckParticipant, ILifecycleParticipant<ISiloLifecycle>, IDisposable
+    internal class MembershipTableCleanupAgent : IHealthCheckParticipant, ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver
     {
         private readonly ClusterMembershipOptions clusterMembershipOptions;
         private readonly IMembershipTable membershipTableProvider;
         private readonly ILogger<MembershipTableCleanupAgent> log;
         private readonly IAsyncTimer cleanupDefunctSilosTimer;
+        private Task _runTask;
 
         public MembershipTableCleanupAgent(
             IOptions<ClusterMembershipOptions> clusterMembershipOptions,
@@ -33,11 +34,6 @@ namespace Orleans.Runtime.MembershipService
                     this.clusterMembershipOptions.DefunctSiloCleanupPeriod.Value,
                     nameof(CleanupDefunctSilos));
             }
-        }
-
-        public void Dispose()
-        {
-            this.cleanupDefunctSilosTimer?.Dispose();
         }
 
         private async Task CleanupDefunctSilos()
@@ -91,21 +87,20 @@ namespace Orleans.Runtime.MembershipService
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var task = Task.CompletedTask;
-            lifecycle.Subscribe(nameof(MembershipTableCleanupAgent), ServiceLifecycleStage.Active, OnStart, OnStop);
+            lifecycle.Subscribe(nameof(MembershipTableCleanupAgent), ServiceLifecycleStage.Active, this);
+        }
 
-            Task OnStart(CancellationToken ct)
-            {
-                task = Task.Run(this.CleanupDefunctSilos);
-                return Task.CompletedTask;
-            }
+        Task ILifecycleObserver.OnStart(CancellationToken ct)
+        {
+            _runTask = Task.Run(CleanupDefunctSilos);
+            return Task.CompletedTask;
+        }
 
-            Task OnStop(CancellationToken ct)
-            {
-                this.cleanupDefunctSilosTimer?.Dispose();
-                task.Ignore();
-                return Task.WhenAny(ct.WhenCancelled(), task);
-            }
+        Task ILifecycleObserver.OnStop(CancellationToken ct)
+        {
+            this.cleanupDefunctSilosTimer?.Dispose();
+            _runTask?.Ignore();
+            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, ct.WhenCancelled()) : Task.CompletedTask;
         }
 
         bool IHealthCheckable.CheckHealth(DateTime lastCheckTime, out string reason)

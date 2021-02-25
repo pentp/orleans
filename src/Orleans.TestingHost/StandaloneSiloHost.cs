@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Orleans.Internal;
 using Orleans.Runtime;
 
 namespace Orleans.TestingHost
@@ -112,23 +113,6 @@ namespace Orleans.TestingHost
             CancellationToken.None,
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
-        }
-
-        private static Task WhenCancelled(this CancellationToken token)
-        {
-            if (token.IsCancellationRequested)
-            {
-                return Task.CompletedTask;
-            }
-
-            var waitForCancellation = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-            token.Register(obj =>
-            {
-                var tcs = (TaskCompletionSource<object>)obj;
-                tcs.TrySetResult(null);
-            }, waitForCancellation);
-
-            return waitForCancellation.Task;
         }
     }
 }

@@ -336,15 +336,11 @@ namespace Orleans.Runtime.MembershipService
             return Task.CompletedTask;
         }
 
-        public async Task OnStop(CancellationToken ct)
+        public Task OnStop(CancellationToken ct)
         {
             _degradationCheckTimer.Dispose();
             _isActive = false;
-
-            if (_runTask is Task task)
-            {
-                await Task.WhenAny(task, ct.WhenCancelled()).ConfigureAwait(false);
-            }
+            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, ct.WhenCancelled()) : Task.CompletedTask;
         }
 
         /// <summary>
