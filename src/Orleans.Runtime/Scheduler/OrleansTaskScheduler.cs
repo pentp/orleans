@@ -143,6 +143,22 @@ namespace Orleans.Runtime.Scheduler
             }
         }
 
+        public void QueueTask(Task task, IGrainContext context)
+        {
+#if DEBUG
+            if (logger.IsEnabled(LogLevel.Trace)) logger.LogTrace("ScheduleTask on {Context}", context);
+#endif
+            var workItemGroup = GetWorkItemGroup(context);
+            if (applicationTurnsStopped && workItemGroup != null && !workItemGroup.IsSystemGroup)
+            {
+                // Drop the task on the floor if it's an application work item and application turns are stopped
+                logger.LogWarning((int)ErrorCode.SchedulerAppTurnsStopped_1, "Dropping task item on context {Context} because application turns are stopped", context);
+                return;
+            }
+
+            task.Start(workItemGroup?.TaskScheduler ?? TaskScheduler.Default);
+        }
+
         // Enqueue a work item to a given context
         public void QueueWorkItem(IWorkItem workItem)
         {

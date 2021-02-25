@@ -28,37 +28,30 @@ namespace Orleans.Runtime.Scheduler
 
         internal static Task QueueActionAsync(this OrleansTaskScheduler scheduler, Action action, IGrainContext targetContext)
         {
-            var resolver = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            Action syncFunc =
-                () =>
-                {
-                    try
-                    {
-                        action();
-                        resolver.TrySetResult(true);
-                    }
-                    catch (Exception exc)
-                    {
-                        resolver.TrySetException(exc);
-                    }
-                };
-            scheduler.QueueAction(syncFunc, targetContext);
-            return resolver.Task;
+            var task = new Task(action);
+            scheduler.QueueTask(task, targetContext);
+            return task;
         }
 
         /// <summary>
         /// Execute a closure ensuring that it has a runtime context (e.g. to send messages from an arbitrary thread)
         /// </summary>
-        /// <param name="scheduler"></param>
-        /// <param name="action"></param>
-        /// <param name="targetContext"></param>
         internal static Task RunOrQueueAction(this OrleansTaskScheduler scheduler, Action action, IGrainContext targetContext)
         {
-            return scheduler.RunOrQueueTask(() =>
+            if (RuntimeContext.CurrentGrainContext?.Equals(targetContext) ?? false)
             {
-                action();
-                return Task.CompletedTask;
-            }, targetContext);
+                try
+                {
+                    action();
+                    return Task.CompletedTask;
+                }
+                catch (Exception exc)
+                {
+                    return Task.FromResult(exc);
+                }
+            }
+
+            return scheduler.QueueActionAsync(action, targetContext);
         }
 
 
