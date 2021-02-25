@@ -103,7 +103,7 @@ namespace NonSilo.Tests.Membership
 
         private async Task Shutdown()
         {
-            var stopTask = _monitor.StopAsync(CancellationToken.None);
+            var stopTask = _monitor.StopAsync();
 
             Task.Run(async () =>
             {

@@ -42,8 +42,13 @@ namespace Tester.Directories
         [SkippableFact, TestCategory("Directory"), TestCategory("Functionals")]
         public async Task PingGrain()
         {
-            var grainOnPrimary = await GetGrainOnPrimary().WithTimeout(TimeSpan.FromSeconds(5), "Could not get a grain on the primary silo");
-            var grainOnSecondary = await GetGrainOnSecondary().WithTimeout(TimeSpan.FromSeconds(5), "Could not get a grain on the secondary silo");
+            var grainOnPrimaryTask = GetGrainOnPrimary();
+            await grainOnPrimaryTask.WithTimeout(TimeSpan.FromSeconds(5), "Could not get a grain on the primary silo");
+            var grainOnPrimary = grainOnPrimaryTask.Result;
+
+            var grainOnSecondaryTask = GetGrainOnSecondary();
+            await grainOnSecondaryTask.WithTimeout(TimeSpan.FromSeconds(5), "Could not get a grain on the secondary silo");
+            var grainOnSecondary = grainOnPrimaryTask.Result;
 
             // Setup
             var primaryCounter = await grainOnPrimary.Ping();

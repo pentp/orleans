@@ -4,6 +4,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Orleans;
+using Orleans.Internal;
 using Orleans.Runtime;
 using Orleans.TestingHost.Utils;
 using Xunit;
@@ -11,13 +12,11 @@ using static TestExtensions.TestDefaultConfiguration;
 
 namespace Tester
 {
-    public class TestUtils
+    public static class TestUtils
     {
-        public static readonly Random Random = new Random();
-
         public static long GetRandomGrainId()
         {
-            return Random.Next();
+            return ThreadSafeRandom.Next();
         }
 
         public static void CheckForAzureStorage()
@@ -122,6 +121,17 @@ namespace Tester
                     result += stat.ActivationCount;
             }
             return result;
+        }
+
+        public static void WaitWithThrow(this Task task, TimeSpan timeout)
+        {
+            if (!task.Wait(timeout)) throw new TimeoutException($"Task.WaitWithThrow has timed out after {timeout}.");
+        }
+
+        public static T WaitForResultWithThrow<T>(this Task<T> task, TimeSpan timeout)
+        {
+            if (!task.Wait(timeout)) throw new TimeoutException($"Task<T>.WaitForResultWithThrow has timed out after {timeout}.");
+            return task.Result;
         }
     }
 

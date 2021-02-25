@@ -208,15 +208,16 @@ namespace Orleans.Internal
         /// <exception cref="TimeoutException">If we time out we will get this exception</exception>
         /// <returns>An awaitable with the given timeout</returns>
         public static WithTimeoutAwaiter WithTimeout(this Task taskToComplete, TimeSpan timeout, Func<TimeSpan, string> exceptionMessage = null) => new(taskToComplete, timeout, exceptionMessage);
+        public static WithTimeoutAwaiter WithTimeout(this Task taskToComplete, TimeSpan timeout, string exceptionMessage) => new(taskToComplete, timeout, exceptionMessage);
 
         public readonly struct WithTimeoutAwaiter : ICriticalNotifyCompletion
         {
             private readonly Task _task;
             private readonly CancellationTokenSource _cancellation;
-            private readonly Func<TimeSpan, string> _message;
+            private readonly object _message;
             private readonly TimeSpan _timeout;
 
-            public WithTimeoutAwaiter(Task task, TimeSpan timeout, Func<TimeSpan, string> message)
+            internal WithTimeoutAwaiter(Task task, TimeSpan timeout, object message)
             {
                 _task = task;
                 _timeout = timeout;
@@ -235,16 +236,17 @@ namespace Orleans.Internal
             public WithTimeoutAwaiter GetAwaiter() => this;
             public bool IsCompleted => _task.IsCompleted;
             void INotifyCompletion.OnCompleted(Action action) => throw new NotSupportedException();
+            public void UnsafeOnCompleted(Action action) => Setup(action, _task, _cancellation);
 
-            public void UnsafeOnCompleted(Action action)
+            private static void Setup(Action action, Task task, CancellationTokenSource cancellation)
             {
-                if (_cancellation != null)
+                if (cancellation != null)
                 {
                     var cont = new Continuation { Action = action };
-                    _cancellation.Token.UnsafeRegister(s => ((Continuation)s).MoveNext(), cont);
+                    cancellation.Token.UnsafeRegister(s => ((Continuation)s).MoveNext(), cont);
                     action = cont.MoveNext;
                 }
-                _task.GetAwaiter().UnsafeOnCompleted(action);
+                task.GetAwaiter().UnsafeOnCompleted(action);
             }
 
             private sealed class Continuation
@@ -263,7 +265,36 @@ namespace Orleans.Internal
                 else
                 {
                     _task.Ignore();
-                    throw new TimeoutException(_message?.Invoke(_timeout) ?? $"WithTimeout has timed out after {_timeout}");
+                    throw new TimeoutException(_message switch { string s => s, Func<TimeSpan, string> f => f(_timeout), _ => $"WithTimeout has timed out after {_timeout}" });
+                }
+            }
+
+            /// <summary>
+            /// Returns an awaitable with the given timeout that does not throw exceptions.
+            /// The caller is responsible for observing any exceptions if necessary.
+            /// </summary>
+            public NoThrowAwaiter NoThrow() => new(_task, _cancellation);
+
+            public readonly struct NoThrowAwaiter : ICriticalNotifyCompletion
+            {
+                private readonly Task _task;
+                private readonly CancellationTokenSource _cancellation;
+
+                internal NoThrowAwaiter(Task task, CancellationTokenSource cancellation)
+                {
+                    _task = task;
+                    _cancellation = cancellation;
+                }
+
+                public NoThrowAwaiter GetAwaiter() => this;
+                public bool IsCompleted => _task.IsCompleted;
+                void INotifyCompletion.OnCompleted(Action action) => throw new NotSupportedException();
+                public void UnsafeOnCompleted(Action action) => Setup(action, _task, _cancellation);
+
+                public Task GetResult()
+                {
+                    _cancellation?.Dispose();
+                    return _task;
                 }
             }
         }
@@ -347,39 +378,18 @@ namespace Orleans.Internal
             }
         }
 
-        internal static Task WhenCancelled(this CancellationToken token)
-        {
-            if (token.IsCancellationRequested)
-            {
-                return Task.CompletedTask;
-            }
-
-            var waitForCancellation = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-            // TODO: this leaks registrations when used together with Task.WhenAny...
-            token.UnsafeRegister(s => ((TaskCompletionSource<object>)s).TrySetResult(null), waitForCancellation);
-
-            return waitForCancellation.Task;
-        }
-
-        internal static Task WhenCancelled(this CancellationToken token, TimeSpan delay)
-        {
-            return token.IsCancellationRequested ? Task.Delay(delay)
-                : token.CanBeCanceled ? Task.WhenAll(Task.Delay(delay), token.WhenCancelled())
-                : Task.Delay(-1);
-        }
-
         /// <summary>
         /// For making an uncancellable task cancellable, by returning an awaitable that is completed when the given task completes or the token is canceled.
         /// Does not throw exceptions. The caller is responsible for observing any exceptions if necessary.
         /// </summary>
-        internal static WhenCompletedOrCanceledAwaiter WhenCompletedOrCanceled(this Task taskToComplete, CancellationToken token) => new(taskToComplete, token);
+        public static WhenCompletedOrCanceledAwaiter WhenCompletedOrCanceled(this Task task, CancellationToken token) => new(task, token);
 
         public readonly struct WhenCompletedOrCanceledAwaiter : ICriticalNotifyCompletion
         {
             private readonly Task _task;
             private readonly CancellationToken _token;
 
-            public WhenCompletedOrCanceledAwaiter(Task task, CancellationToken token)
+            internal WhenCompletedOrCanceledAwaiter(Task task, CancellationToken token)
             {
                 _task = task;
                 _token = token;
@@ -396,7 +406,7 @@ namespace Orleans.Internal
                 {
                     var cont = new Continuation { Action = action };
                     cont.Registration = _token.UnsafeRegister(s => ThreadPool.UnsafeQueueUserWorkItem((Continuation)s, true), cont);
-                    action = cont.MoveNext;
+                    action = cont.Completed;
                 }
                 _task.GetAwaiter().UnsafeOnCompleted(action);
             }
@@ -407,7 +417,7 @@ namespace Orleans.Internal
                 public CancellationTokenRegistration Registration;
 
                 public void Execute() => MoveNext(false);
-                public void MoveNext() => MoveNext(true);
+                public void Completed() => MoveNext(true);
 
                 private void MoveNext(bool unregister)
                 {
@@ -421,13 +431,71 @@ namespace Orleans.Internal
                 }
             }
 
-            public Task AsTask()
+            public Task AsTask() => _task is { IsCompleted: false } t && !_token.IsCancellationRequested ? Task.WhenAny(t, Task.Delay(-1, _token)) : Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// For making an uncancellable task cancellable, by returning an awaitable that is completed when the given task completes or the token is canceled (after a grace period).
+        /// Does not throw exceptions. The caller is responsible for observing any exceptions if necessary.
+        /// </summary>
+        public static WhenCompletedOrCanceledDelayAwaiter WhenCompletedOrCanceled(this Task task, CancellationToken token, TimeSpan gracePeriod) => new(task, token, gracePeriod);
+
+        public readonly struct WhenCompletedOrCanceledDelayAwaiter : ICriticalNotifyCompletion
+        {
+            private readonly Task _task;
+            private readonly CancellationToken _token;
+            private readonly CancellationTokenSource _delay;
+
+            internal WhenCompletedOrCanceledDelayAwaiter(Task task, CancellationToken token, TimeSpan gracePeriod)
             {
-                if (_task is { IsCompleted: false } t && !_token.IsCancellationRequested)
+                _task = task;
+                _token = token;
+                _delay = task.IsCompleted || !token.CanBeCanceled ? null : new(gracePeriod);
+            }
+
+            public WhenCompletedOrCanceledDelayAwaiter GetAwaiter() => this;
+            public bool IsCompleted => _task.IsCompleted;
+            void INotifyCompletion.OnCompleted(Action action) => throw new NotSupportedException();
+
+            public void UnsafeOnCompleted(Action action)
+            {
+                if (_delay != null)
                 {
-                    return _token.CanBeCanceled ? Task.WhenAny(t, _token.WhenCancelled()) : Task.WhenAny(t);
+                    var cont = new Continuation { Action = action, Token = _token };
+                    _delay.Token.UnsafeRegister(s => ((Continuation)s).GracePeriodEnded(), cont);
+                    action = cont.Completed;
                 }
-                return Task.CompletedTask;
+                _task.GetAwaiter().UnsafeOnCompleted(action);
+            }
+
+            private sealed class Continuation : IThreadPoolWorkItem
+            {
+                public Action Action;
+                public CancellationToken Token;
+                public CancellationTokenRegistration Registration;
+
+                public void GracePeriodEnded() => Registration = Token.UnsafeRegister(s => ThreadPool.UnsafeQueueUserWorkItem((Continuation)s, true), this);
+
+                public void Execute() => MoveNext(false);
+                public void Completed() => MoveNext(true);
+
+                private void MoveNext(bool unregister)
+                {
+                    if (Interlocked.Exchange(ref Action, null) is { } action)
+                    {
+                        // reset resources before executing the callback - in case of cancellation the original task could hold a reference to this continuation for a long time
+                        Token = default;
+                        if (unregister) Registration.Unregister();
+                        Registration = default;
+                        action();
+                    }
+                }
+            }
+
+            public Task GetResult()
+            {
+                _delay?.Dispose();
+                return _task;
             }
         }
 
@@ -439,7 +507,7 @@ namespace Orleans.Internal
         public readonly struct IgnoreExceptionsAwaiter : ICriticalNotifyCompletion
         {
             private readonly Task _task;
-            public IgnoreExceptionsAwaiter(Task task) => _task = task;
+            internal IgnoreExceptionsAwaiter(Task task) => _task = task;
             public IgnoreExceptionsAwaiter GetAwaiter() => this;
             public bool IsCompleted => _task.IsCompleted;
             public void OnCompleted(Action action) => _task.GetAwaiter().OnCompleted(action);
@@ -453,16 +521,10 @@ namespace Orleans.Internal
         /// </summary>
         public static NoThrowAwaiter NoThrow(this Task task) => new(task);
 
-        /// <summary>
-        /// Returns an awaitable that does not throw exceptions and runs continuations on the default scheduler.
-        /// The caller is responsible for observing any exceptions if necessary.
-        /// </summary>
-        public static NoThrowCfgAwaiter NoThrowDefaultScheduler(this Task task) => new(task);
-
         public readonly struct NoThrowAwaiter : ICriticalNotifyCompletion
         {
             private readonly Task _task;
-            public NoThrowAwaiter(Task task) => _task = task;
+            internal NoThrowAwaiter(Task task) => _task = task;
             public NoThrowAwaiter GetAwaiter() => this;
             public bool IsCompleted => _task.IsCompleted;
             public void OnCompleted(Action action) => _task.GetAwaiter().OnCompleted(action);
@@ -470,10 +532,16 @@ namespace Orleans.Internal
             public Task GetResult() => _task;
         }
 
+        /// <summary>
+        /// Returns an awaitable that does not throw exceptions and runs continuations on the default scheduler.
+        /// The caller is responsible for observing any exceptions if necessary.
+        /// </summary>
+        public static NoThrowCfgAwaiter NoThrowDefaultScheduler(this Task task) => new(task);
+
         public readonly struct NoThrowCfgAwaiter : ICriticalNotifyCompletion
         {
             private readonly Task _task;
-            public NoThrowCfgAwaiter(Task task) => _task = task;
+            internal NoThrowCfgAwaiter(Task task) => _task = task;
             public NoThrowCfgAwaiter GetAwaiter() => this;
             public bool IsCompleted => _task.IsCompleted;
             public void OnCompleted(Action action) => _task.ConfigureAwait(false).GetAwaiter().OnCompleted(action);

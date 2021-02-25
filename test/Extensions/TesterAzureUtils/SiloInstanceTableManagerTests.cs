@@ -129,8 +129,9 @@ namespace Tester.AzureUtils
         [SkippableFact, TestCategory("Functional")]
         public async Task SiloInstanceTable_Op_CreateSiloEntryConditionally()
         {
-            bool didInsert = await manager.TryCreateTableVersionEntryAsync()
-                .WithTimeout(new Orleans.Clustering.AzureStorage.AzureStoragePolicyOptions().OperationTimeout);
+            var task = manager.TryCreateTableVersionEntryAsync();
+            await task.WithTimeout(new AzureStoragePolicyOptions().OperationTimeout);
+            var didInsert = task.Result;
 
             Assert.True(didInsert, "Did insert");
         }

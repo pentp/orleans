@@ -23,6 +23,7 @@ namespace Orleans.Runtime.MembershipService
         private readonly IRemoteSiloProber siloProber;
         private readonly IAsyncTimer iAmAliveTimer;
         private Func<DateTime> getUtcDateTime = () => DateTime.UtcNow;
+        private Task iAmAliveTask = Task.CompletedTask;
 
         public MembershipAgent(
             MembershipTableManager tableManager,
@@ -55,6 +56,7 @@ namespace Orleans.Runtime.MembershipService
 
         private async Task UpdateIAmAlive()
         {
+            await Task.Yield();
             if (this.log.IsEnabled(LogLevel.Debug)) this.log.LogDebug("Starting periodic membership liveness timestamp updates");
             try
             {
@@ -112,7 +114,7 @@ namespace Orleans.Runtime.MembershipService
 
             try
             {
-                await this.UpdateStatus(SiloStatus.Active);
+                await tableManager.UpdateStatus(SiloStatus.Active);
                 this.log.LogInformation(
                     (int)ErrorCode.MembershipFinishBecomeActive,
                     "-Finished BecomeActive.");
@@ -125,6 +127,8 @@ namespace Orleans.Runtime.MembershipService
                     exception);
                 throw;
             }
+
+            iAmAliveTask = UpdateIAmAlive();
         }
 
         private async Task ValidateInitialConnectivity()
@@ -260,7 +264,7 @@ namespace Orleans.Runtime.MembershipService
             this.log.Info(ErrorCode.MembershipJoining, "-Joining");
             try
             {
-                await this.UpdateStatus(SiloStatus.Joining);
+                await tableManager.UpdateStatus(SiloStatus.Joining);
             }
             catch (Exception exc)
             {
@@ -269,26 +273,35 @@ namespace Orleans.Runtime.MembershipService
             }
         }
 
-        private async Task BecomeShuttingDown()
+        private async Task OnBecomeActiveStop(CancellationToken ct)
         {
-            this.log.Info(ErrorCode.MembershipShutDown, "-Shutdown");
-            try
-            {
-                await this.UpdateStatus(SiloStatus.ShuttingDown);
-            }
-            catch (Exception exc)
-            {
-                this.log.Error(ErrorCode.MembershipFailedToShutdown, "Error updating status to ShuttingDown", exc);
-                // result not observed
-            }
-        }
+            await Task.Yield();
+            iAmAliveTimer.Dispose();
 
-        private async Task BecomeStopping()
-        {
+            if (!ct.IsCancellationRequested)
+            {
+                log.Info(ErrorCode.MembershipShutDown, "-Shutdown");
+                var shutdown = tableManager.UpdateStatus(SiloStatus.ShuttingDown);
+
+                // Allow some minimum time for graceful shutdown.
+                await Task.WhenAll(shutdown, iAmAliveTask).WhenCompletedOrCanceled(ct, gracePeriod: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
+
+                if (shutdown.IsCompletedSuccessfully) return;
+
+                if (shutdown.IsFaulted)
+                {
+                    log.Error(ErrorCode.MembershipFailedToShutdown, "Error updating status to ShuttingDown: starting ungraceful shutdown", shutdown.Exception.Unwrap());
+                }
+                else
+                {
+                    log.LogWarning("Graceful shutdown aborted: starting ungraceful shutdown");
+                }
+            }
+
             log.Info(ErrorCode.MembershipStop, "-Stop");
             try
             {
-                await this.UpdateStatus(SiloStatus.Stopping);
+                await tableManager.UpdateStatus(SiloStatus.Stopping);
             }
             catch (Exception exc)
             {
@@ -297,103 +310,30 @@ namespace Orleans.Runtime.MembershipService
             }
         }
 
-        private async Task BecomeDead()
+        private async Task OnRuntimeInitializeStop(CancellationToken ct)
         {
-            this.log.LogInformation(
-                (int)ErrorCode.MembershipKillMyself,
-                "Updating status to Dead");
+            await Task.Yield();
+            iAmAliveTimer.Dispose();
 
-            try
+            log.LogInformation((int)ErrorCode.MembershipKillMyself, "Updating status to Dead");
+            var task = await tableManager.UpdateStatus(SiloStatus.Dead).WithTimeout(TimeSpan.FromMinutes(1)).NoThrow();
+            if (!task.IsCompleted)
             {
-                await this.UpdateStatus(SiloStatus.Dead);
+                log.LogWarning((int)ErrorCode.MembershipFailedToKillMyself, "Updating status to Dead timed out");
             }
-            catch (Exception exception)
+            else if (task.IsFaulted)
             {
-                this.log.LogError(
-                    (int)ErrorCode.MembershipFailedToKillMyself,
-                    "Failure updating status to " + nameof(SiloStatus.Dead) + ": {Exception}",
-                    exception);
-                // result not observed
+                log.LogError((int)ErrorCode.MembershipFailedToKillMyself, "Failure updating status to Dead: {Exception}", task.Exception.Unwrap());
             }
-        }
-
-        private Task UpdateStatus(SiloStatus status)
-        {
-            return this.tableManager.UpdateStatus(status);
         }
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            {
-                Task OnRuntimeInitializeStart(CancellationToken ct) => Task.CompletedTask;
+            // Gossip before the outbound queue gets closed
+            lifecycle.Subscribe(nameof(MembershipAgent), ServiceLifecycleStage.RuntimeInitialize + 1, _ => Task.CompletedTask, OnRuntimeInitializeStop);
 
-                Task OnRuntimeInitializeStop(CancellationToken ct)
-                {
-                    this.iAmAliveTimer.Dispose();
-                    return Task.WhenAny(
-                        Task.Run(this.BecomeDead),
-                        Task.Delay(TimeSpan.FromMinutes(1)));
-                }
-
-                lifecycle.Subscribe(
-                    nameof(MembershipAgent),
-                    ServiceLifecycleStage.RuntimeInitialize + 1, // Gossip before the outbound queue gets closed
-                    OnRuntimeInitializeStart,
-                    OnRuntimeInitializeStop);
-            }
-
-            {
-                Task AfterRuntimeGrainServicesStart(CancellationToken ct)
-                {
-                    return Task.Run(this.BecomeJoining);
-                }
-
-                lifecycle.Subscribe(
-                    nameof(MembershipAgent),
-                    ServiceLifecycleStage.AfterRuntimeGrainServices,
-                    AfterRuntimeGrainServicesStart);
-            }
-
-            {
-                var task = Task.CompletedTask;
-
-                async Task OnBecomeActiveStart(CancellationToken ct)
-                {
-                    await Task.Run(this.BecomeActive);
-                    task = Task.Run(this.UpdateIAmAlive);
-                }
-
-                async Task OnBecomeActiveStop(CancellationToken ct)
-                {
-                    this.iAmAliveTimer.Dispose();
-
-                    if (ct.IsCancellationRequested)
-                    {
-                        await Task.Run(this.BecomeStopping);
-                    }
-                    else
-                    {
-                        // Allow some minimum time for graceful shutdown.
-                        var gracePeriod = ct.WhenCancelled(delay: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
-                        var shutdown = Task.Run(this.BecomeShuttingDown);
-                        if (gracePeriod == await Task.WhenAny(gracePeriod, shutdown))
-                        {
-                            this.log.LogWarning("Graceful shutdown aborted: starting ungraceful shutdown");
-                            await Task.Run(this.BecomeStopping);
-                        }
-                        else
-                        {
-                            await Task.WhenAny(gracePeriod, task);
-                        }
-                    }
-                }
-
-                lifecycle.Subscribe(
-                    nameof(MembershipAgent),
-                    ServiceLifecycleStage.BecomeActive,
-                    OnBecomeActiveStart,
-                    OnBecomeActiveStop);
-            }
+            lifecycle.Subscribe(nameof(MembershipAgent), ServiceLifecycleStage.AfterRuntimeGrainServices, _ => Task.Run(BecomeJoining));
+            lifecycle.Subscribe(nameof(MembershipAgent), ServiceLifecycleStage.BecomeActive, _ => Task.Run(BecomeActive), OnBecomeActiveStop);
         }
 
         public void Dispose()

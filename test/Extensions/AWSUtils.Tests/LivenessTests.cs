@@ -10,6 +10,7 @@ using Orleans.TestingHost;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Tester;
 using UnitTests.MembershipTests;
 using Xunit;
 using Xunit.Abstractions;
@@ -36,7 +37,7 @@ namespace AWSUtils.Tests.Liveness
                     new KeySchemaElement { AttributeName = "PartitionKey", KeyType = KeyType.HASH }
                 }, new List<AttributeDefinition> {
                     new AttributeDefinition { AttributeName = "PartitionKey", AttributeType = ScalarAttributeType.S }
-                }).WithTimeout(TimeSpan.FromSeconds(2), "Unable to connect to AWS DynamoDB simulator").Wait();
+                }).WaitWithThrow(TimeSpan.FromSeconds(2));
                 return true;
             }
             catch (Exception exc)

@@ -17,7 +17,7 @@ namespace Orleans.Runtime.MembershipService
     /// <summary>
     /// Responsible for ensuring that this silo monitors other silos in the cluster.
     /// </summary>
-    internal class ClusterHealthMonitor : IHealthCheckParticipant, ILifecycleParticipant<ISiloLifecycle>, ClusterHealthMonitor.ITestAccessor
+    internal class ClusterHealthMonitor : IHealthCheckParticipant, ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver, ClusterHealthMonitor.ITestAccessor
     {
         private readonly CancellationTokenSource shutdownCancellation = new CancellationTokenSource();
         private readonly ILocalSiloDetails localSiloDetails;
@@ -30,6 +30,7 @@ namespace Orleans.Runtime.MembershipService
         private MembershipVersion observedMembershipVersion;
         private Func<SiloAddress, SiloHealthMonitor> createMonitor;
         private Func<SiloHealthMonitor, ProbeResult, Task> onProbeResult;
+        private Task processTask = Task.CompletedTask;
 
         /// <summary>
         /// Exposes private members of <see cref="ClusterHealthMonitor"/> for test purposes.
@@ -84,8 +85,7 @@ namespace Orleans.Runtime.MembershipService
                     {
                         if (!newMonitoredSilos.ContainsKey(pair.Key))
                         {
-                            using var cancellation = new CancellationTokenSource(this.clusterMembershipOptions.CurrentValue.ProbeTimeout);
-                            await pair.Value.StopAsync(cancellation.Token);
+                            await pair.Value.StopAsync().WithTimeout(clusterMembershipOptions.CurrentValue.ProbeTimeout).NoThrow();
                         }
                     }
 
@@ -196,32 +196,30 @@ namespace Orleans.Runtime.MembershipService
         
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var processTask = Task.CompletedTask;
-            lifecycle.Subscribe(nameof(ClusterHealthMonitor), ServiceLifecycleStage.Active, OnActiveStart, OnActiveStop);
-
-            Task OnActiveStart(CancellationToken ct)
-            {
-                processTask = Task.Run(ProcessMembershipUpdates);
-                return Task.CompletedTask;
-            }
-
-            Task OnActiveStop(CancellationToken ct)
-            {
-                this.shutdownCancellation.Cancel();
-                var tasks = new List<Task> { processTask };
-
-                foreach (var monitor in this.monitoredSilos.Values)
-                {
-                    tasks.Add(monitor.StopAsync(ct));
-                }
-
-                this.monitoredSilos = ImmutableDictionary<SiloAddress, SiloHealthMonitor>.Empty;
-
-                // Allow some minimum time for graceful shutdown.
-                var shutdownGracePeriod = ct.WhenCancelled(delay: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
-                return Task.WhenAny(shutdownGracePeriod, Task.WhenAll(tasks));
-            }
+            lifecycle.Subscribe(nameof(ClusterHealthMonitor), ServiceLifecycleStage.Active, this);
         }
+
+        Task ILifecycleObserver.OnStart(CancellationToken ct)
+        {
+            processTask = Task.Run(ProcessMembershipUpdates);
+            return Task.CompletedTask;
+        }
+
+        Task ILifecycleObserver.OnStop(CancellationToken ct) => Task.Run(async () =>
+        {
+            this.shutdownCancellation.Cancel();
+            var tasks = new List<Task> { processTask };
+
+            foreach (var monitor in this.monitoredSilos)
+            {
+                tasks.Add(monitor.Value.StopAsync());
+            }
+
+            this.monitoredSilos = ImmutableDictionary<SiloAddress, SiloHealthMonitor>.Empty;
+
+            // Allow some minimum time for graceful shutdown.
+            await Task.WhenAll(tasks).WhenCompletedOrCanceled(ct, gracePeriod: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
+        });
 
         /// <summary>
         /// Performs the default action when a new probe result is created.

@@ -13,7 +13,7 @@ namespace UnitTests
     {
 
         [Fact, TestCategory("Functional"), TestCategory("AsynchronyPrimitives")]
-        public void Async_Task_WithTimeout_Wait()
+        public async Task Async_Task_WithTimeout_NoThrow()
         {
             TimeSpan timeout = TimeSpan.FromMilliseconds(2000);
             TimeSpan sleepTime = TimeSpan.FromMilliseconds(4000);
@@ -25,21 +25,13 @@ namespace UnitTests
                 {
                     Thread.Sleep(sleepTime);
                     return 5;
-                }).WithTimeout(timeout);
+                });
 
-            bool hasThrown = false;
-            try
-            {
-                promise.WaitWithThrow(timeout);
-            }
-            catch (Exception exc)
-            {
-                hasThrown = true;
-                Assert.True(exc.GetBaseException().GetType().Equals(typeof(TimeoutException)), exc.ToString());
-            }
+            var result = await promise.WithTimeout(timeout).NoThrow();
             watch.Stop();
 
-            Assert.True(hasThrown);
+            Assert.False(promise.IsCompleted);
+            Assert.Same(promise, result);
             Assert.True(watch.Elapsed >= timeout - delta, watch.Elapsed.ToString());
             Assert.True(watch.Elapsed <= timeout + delta, watch.Elapsed.ToString());
             Assert.True(watch.Elapsed < sleepTime, watch.Elapsed.ToString());
@@ -57,9 +49,9 @@ namespace UnitTests
             {
                 Thread.Sleep(sleepTime);
                 return 5;
-            }).WithTimeout(timeout);
+            });
 
-            await Assert.ThrowsAsync<TimeoutException>(() => promise);
+            await Assert.ThrowsAsync<TimeoutException>(async () => await promise.WithTimeout(timeout));
             watch.Stop();
 
             Assert.True(watch.Elapsed >= timeout - delta, watch.Elapsed.ToString());

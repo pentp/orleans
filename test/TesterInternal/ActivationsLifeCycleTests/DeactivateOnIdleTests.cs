@@ -66,8 +66,9 @@ namespace UnitTests.ActivationsLifeCycleTests
             await a.GetOtherAge(); // prime a's routing cache
             await b.DeactivateSelf();
             Thread.Sleep(5000);
-            var age = a.GetOtherAge().WaitForResultWithThrow(TimeSpan.FromMilliseconds(2000));
-            Assert.True(age.TotalMilliseconds < 2000, "Should be newly activated grain");
+            var age = a.GetOtherAge();
+            await a.GetOtherAge().WithTimeout(TimeSpan.FromMilliseconds(2000));
+            Assert.True(age.Result.TotalMilliseconds < 2000, "Should be newly activated grain");
         }
 
         [Fact, TestCategory("SlowBVT"), TestCategory("Functional")]

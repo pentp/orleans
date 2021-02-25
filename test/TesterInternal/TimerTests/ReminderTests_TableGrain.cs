@@ -2,12 +2,12 @@
 
 using System;
 using System.Threading.Tasks;
+using Orleans.Hosting;
 using Orleans.TestingHost;
+using Tester;
 using TestExtensions;
 using UnitTests.GrainInterfaces;
 using Xunit;
-using Orleans.Hosting;
-using Orleans.Internal;
 
 // ReSharper disable InconsistentNaming
 // ReSharper disable UnusedVariable

@@ -6,6 +6,7 @@ using Orleans.AWSUtils.Tests;
 using Orleans.Internal;
 using System;
 using System.Collections.Generic;
+using Tester;
 
 namespace AWSUtils.Tests.StorageTests
 {
@@ -28,7 +29,7 @@ namespace AWSUtils.Tests.StorageTests
                     new KeySchemaElement { AttributeName = "PartitionKey", KeyType = KeyType.HASH }
                 }, new List<AttributeDefinition> {
                     new AttributeDefinition { AttributeName = "PartitionKey", AttributeType = ScalarAttributeType.S }
-                }).WithTimeout(TimeSpan.FromSeconds(2)).Wait();
+                }).WaitWithThrow(TimeSpan.FromSeconds(2));
                 return true;
             }
             catch (Exception exc)

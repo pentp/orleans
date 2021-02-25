@@ -54,7 +54,7 @@ namespace UnitTests.StuckGrainTests
             var task = stuckGrain.RunForever();
 
             // Should timeout
-            await Assert.ThrowsAsync<TimeoutException>(() => task.WithTimeout(TimeSpan.FromSeconds(1)));
+            await Assert.ThrowsAsync<TimeoutException>(async () => await task.WithTimeout(TimeSpan.FromSeconds(1)));
 
             var cleaner = this.fixture.GrainFactory.GetGrain<IStuckCleanGrain>(id);
             await cleaner.Release(id);
@@ -76,12 +76,12 @@ namespace UnitTests.StuckGrainTests
             var task = stuckGrain.RunForever();
 
             // Should timeout
-            await Assert.ThrowsAsync<TimeoutException>(() => task.WithTimeout(TimeSpan.FromSeconds(1)));
+            await Assert.ThrowsAsync<TimeoutException>(async () => await task.WithTimeout(TimeSpan.FromSeconds(1)));
 
             for (var i = 0; i < 3; i++)
             {
                 await Assert.ThrowsAsync<TimeoutException>(
-                    () => stuckGrain.NonBlockingCall().WithTimeout(TimeSpan.FromMilliseconds(500)));
+                    async () => await stuckGrain.NonBlockingCall().WithTimeout(TimeSpan.FromMilliseconds(500)));
             }
 
             // Wait so the first task will reach with DefaultCollectionAge timeout
@@ -103,7 +103,7 @@ namespace UnitTests.StuckGrainTests
             for (var i = 0; i < 3; i++)
             {
                 await Assert.ThrowsAsync<TimeoutException>(
-                    () => stuckGrain.NonBlockingCall().WithTimeout(TimeSpan.FromMilliseconds(500)));
+                    async () => await stuckGrain.NonBlockingCall().WithTimeout(TimeSpan.FromMilliseconds(500)));
             }
 
             // Wait so the first task will reach with DefaultCollectionAge timeout

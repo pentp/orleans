@@ -3,6 +3,7 @@ using k8s.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
+using Orleans.Internal;
 using Orleans.Runtime;
 using System;
 using System.Collections.Generic;
@@ -15,7 +16,7 @@ namespace Orleans.Hosting.Kubernetes
     /// <summary>
     /// Reflects cluster configuration changes between Orleans and Kubernetes.
     /// </summary>
-    public sealed class KubernetesClusterAgent : ILifecycleParticipant<ISiloLifecycle>
+    public sealed class KubernetesClusterAgent : ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver
     {
         private readonly IOptionsMonitor<KubernetesHostingOptions> _options;
         private readonly ClusterOptions _clusterOptions;
@@ -54,15 +55,12 @@ namespace Orleans.Hosting.Kubernetes
 
         public void Participate(ISiloLifecycle lifecycle)
         {
-            lifecycle.Subscribe(
-                nameof(KubernetesClusterAgent),
-                ServiceLifecycleStage.AfterRuntimeGrainServices,
-                OnRuntimeInitializeStart,
-                OnRuntimeInitializeStop);
+            lifecycle.Subscribe(nameof(KubernetesClusterAgent), ServiceLifecycleStage.AfterRuntimeGrainServices, this);
         }
 
-        private async Task OnRuntimeInitializeStart(CancellationToken cancellation)
+        async Task ILifecycleObserver.OnStart(CancellationToken cancellation)
         {
+            await Task.Yield();
             // Find the currently known cluster members first, before interrogating Kubernetes
             await _clusterMembershipService.Refresh();
             var snapshot = _clusterMembershipService.CurrentSnapshot.Members;
@@ -112,18 +110,20 @@ namespace Orleans.Hosting.Kubernetes
             }
 
             // Start monitoring loop
-            ThreadPool.UnsafeQueueUserWorkItem(_ => _runTask = Task.WhenAll(Task.Run(MonitorOrleansClustering), Task.Run(MonitorKubernetesPods)), null);
+            _runTask = Task.WhenAll(Task.Run(MonitorOrleansClustering), Task.Run(MonitorKubernetesPods));
         }
 
-        public async Task OnRuntimeInitializeStop(CancellationToken cancellationToken)
+        async Task ILifecycleObserver.OnStop(CancellationToken cancellationToken)
         {
             _shutdownToken.Cancel();
             _enableMonitoring = false;
             _pauseMonitoringSemaphore.Release();
 
-            if (_runTask is object)
+            if (_runTask is { IsCompleted: false } task)
             {
-                await Task.WhenAny(_runTask, Task.Delay(TimeSpan.FromMinutes(1), cancellationToken));
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(TimeSpan.FromMinutes(1));
+                await task.WhenCompletedOrCanceled(cts.Token);
             }
         }
 
@@ -189,10 +189,7 @@ namespace Orleans.Hosting.Kubernetes
                 catch (Exception exception)
                 {
                     _logger.LogError(exception, "Error monitoring cluster changes");
-                    if (!_shutdownToken.IsCancellationRequested)
-                    {
-                        await Task.Delay(5000);
-                    }
+                    await Task.Delay(5000, _shutdownToken.Token).NoThrow();
                 }
             }
         }
@@ -260,16 +257,13 @@ namespace Orleans.Hosting.Kubernetes
                             _logger.LogDebug("Unexpected end of stream from Kubernetes API. Will try again.");
                         }
 
-                        await Task.Delay(5000);
+                        await Task.Delay(5000, _shutdownToken.Token).NoThrow();
                     }
                 }
                 catch (Exception exception)
                 {
                     _logger.LogError(exception, "Error monitoring Kubernetes pods");
-                    if (!_shutdownToken.IsCancellationRequested)
-                    {
-                        await Task.Delay(5000);
-                    }
+                    await Task.Delay(5000, _shutdownToken.Token).NoThrow();
                 }
             }
         }

@@ -13,7 +13,7 @@ using Orleans.Runtime.Utilities;
 
 namespace Orleans.Runtime.MembershipService
 {
-    internal class MembershipTableManager : IHealthCheckParticipant, ILifecycleParticipant<ISiloLifecycle>, IDisposable
+    internal class MembershipTableManager : IHealthCheckParticipant, ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver, IDisposable
     {
         private const int NUM_CONDITIONAL_WRITE_CONTENTION_ATTEMPTS = -1; // unlimited
         private const int NUM_CONDITIONAL_WRITE_ERROR_ATTEMPTS = -1;
@@ -35,6 +35,7 @@ namespace Orleans.Runtime.MembershipService
         private readonly SiloAddress myAddress;
         private readonly AsyncEnumerable<MembershipTableSnapshot> updates;
         private readonly IAsyncTimer membershipUpdateTimer;
+        private Task membershipUpdateTask = Task.CompletedTask;
 
         private MembershipTableSnapshot snapshot;
 
@@ -82,16 +83,7 @@ namespace Orleans.Runtime.MembershipService
 
         private Task pendingRefresh;
 
-        public async Task Refresh()
-        {
-            var pending = this.pendingRefresh;
-            if (pending == null || pending.IsCompleted)
-            {
-                pending = this.pendingRefresh = this.RefreshInternal(requireCleanup: false);
-            }
-
-            await pending;
-        }
+        public Task Refresh() => pendingRefresh is { IsCompleted: false } t ? t : pendingRefresh = RefreshInternal(requireCleanup: false);
 
         public async Task RefreshFromSnapshot(MembershipTableSnapshot snapshot)
         {
@@ -187,9 +179,11 @@ namespace Orleans.Runtime.MembershipService
                 this.log.LogError((int)ErrorCode.MembershipFailedToStart, "Membership failed to start: {Exception}", exception);
                 throw;
             }
+
+            membershipUpdateTask = PeriodicallyRefreshMembershipTable();
         }
 
-        public async Task UpdateIAmAlive()
+        public Task UpdateIAmAlive()
         {
             var entry = new MembershipEntry
             {
@@ -197,7 +191,7 @@ namespace Orleans.Runtime.MembershipService
                 IAmAliveTime = DateTime.UtcNow
             };
 
-            await this.membershipTableProvider.UpdateIAmAlive(entry);
+            return membershipTableProvider.UpdateIAmAlive(entry);
         }
 
         private void DetectNodeMigration(MembershipTableSnapshot snapshot, string myHostname)
@@ -233,6 +227,7 @@ namespace Orleans.Runtime.MembershipService
 
         private async Task PeriodicallyRefreshMembershipTable()
         {
+            await Task.Yield();
             if (this.log.IsEnabled(LogLevel.Debug)) this.log.LogDebug("Starting periodic membership table refreshes");
             try
             {
@@ -315,12 +310,10 @@ namespace Orleans.Runtime.MembershipService
                     // SystemTarget-based membership may not be accessible at this stage, so allow for one quick attempt to update
                     // the status before continuing regardless of the outcome.
                     var updateTask = updateMyStatusTask(0);
-                    updateTask.Ignore();
-                    await Task.WhenAny(Task.Delay(TimeSpan.FromMilliseconds(500)), updateTask);
+                    (await updateTask.WithTimeout(TimeSpan.FromMilliseconds(500)).NoThrow()).Ignore();
 
                     var gossipTask = this.GossipToOthers(this.myAddress, status);
-                    gossipTask.Ignore();
-                    await Task.WhenAny(Task.Delay(TimeSpan.FromMilliseconds(500)), gossipTask);
+                    (await gossipTask.WithTimeout(TimeSpan.FromMilliseconds(500)).NoThrow()).Ignore();
 
                     this.CurrentStatus = status;
                     return;
@@ -332,12 +325,9 @@ namespace Orleans.Runtime.MembershipService
                 {
                     if (log.IsEnabled(LogLevel.Debug)) log.Debug("-Silo {0} Successfully updated my Status in the Membership table to {1}", myAddress, status);
 
-                    var gossipTask = this.GossipToOthers(this.myAddress, status);
+                    var gossipTask = await GossipToOthers(myAddress, status).WithTimeout(GossipTimeout).NoThrow();
                     gossipTask.Ignore();
-                    var cancellation = new CancellationTokenSource();
-                    var timeoutTask = Task.Delay(GossipTimeout, cancellation.Token);
-                    var task = await Task.WhenAny(gossipTask, timeoutTask);
-                    if (ReferenceEquals(task, timeoutTask))
+                    if (!gossipTask.IsCompleted)
                     {
                         if (status.IsTerminating())
                         {
@@ -347,10 +337,6 @@ namespace Orleans.Runtime.MembershipService
                         {
                             this.log.LogDebug("Timed out while gossiping status to other silos after {Timeout}", GossipTimeout);
                         }
-                    }
-                    else
-                    {
-                        cancellation.Cancel();
                     }
                 }
                 else
@@ -846,27 +832,17 @@ namespace Orleans.Runtime.MembershipService
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var task = Task.CompletedTask;
-            lifecycle.Subscribe(
-                nameof(MembershipTableManager),
-                ServiceLifecycleStage.RuntimeGrainServices,
-                OnRuntimeGrainServicesStart,
-                OnRuntimeGrainServicesStop);
+            lifecycle.Subscribe(nameof(MembershipTableManager), ServiceLifecycleStage.RuntimeGrainServices, this);
+        }
 
-            async Task OnRuntimeGrainServicesStart(CancellationToken ct)
-            {
-                await Task.Run(this.Start);
-                task = Task.Run(this.PeriodicallyRefreshMembershipTable);
-            }
+        Task ILifecycleObserver.OnStart(CancellationToken ct) => Task.Run(Start);
 
-            Task OnRuntimeGrainServicesStop(CancellationToken ct)
-            {
-                this.membershipUpdateTimer.Dispose();
+        async Task ILifecycleObserver.OnStop(CancellationToken ct)
+        {
+            this.membershipUpdateTimer.Dispose();
 
-                // Allow some minimum time for graceful shutdown.
-                var gracePeriod = ct.WhenCancelled(delay: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
-                return Task.WhenAny(gracePeriod, task);
-            }
+            // Allow some minimum time for graceful shutdown.
+            await membershipUpdateTask.WhenCompletedOrCanceled(ct, gracePeriod: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
         }
 
         public void Dispose()

@@ -15,6 +15,7 @@ using Orleans.Internal;
 using TestExtensions;
 using UnitTests.GrainInterfaces;
 using Xunit;
+using Tester;
 
 // ReSharper disable InconsistentNaming
 // ReSharper disable UnusedVariable

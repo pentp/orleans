@@ -10,12 +10,14 @@ using Orleans.Runtime.Utilities;
 
 namespace Orleans.Runtime
 {
-    internal class ClusterMembershipService : IClusterMembershipService, ILifecycleParticipant<ISiloLifecycle>, IDisposable
+    internal class ClusterMembershipService : IClusterMembershipService, ILifecycleParticipant<ISiloLifecycle>, ILifecycleObserver, IDisposable
     {
         private readonly AsyncEnumerable<ClusterMembershipSnapshot> updates;
         private readonly MembershipTableManager membershipTableManager;
         private readonly ILogger<ClusterMembershipService> log;
         private readonly IFatalErrorHandler fatalErrorHandler;
+        private readonly CancellationTokenSource cancellation = new();
+        private Task updateTask = Task.CompletedTask;
         private ClusterMembershipSnapshot snapshot;
 
         public ClusterMembershipService(
@@ -75,14 +77,14 @@ namespace Orleans.Runtime
             }
         }
 
-        public async Task<bool> TryKill(SiloAddress siloAddress) => await this.membershipTableManager.TryKill(siloAddress);
+        public Task<bool> TryKill(SiloAddress siloAddress) => this.membershipTableManager.TryKill(siloAddress);
 
-        private async Task ProcessMembershipUpdates(CancellationToken ct)
+        private async Task ProcessMembershipUpdates()
         {
             try
             {
                 if (this.log.IsEnabled(LogLevel.Debug)) this.log.LogDebug("Starting to process membership updates");
-                await foreach (var tableSnapshot in this.membershipTableManager.MembershipTableUpdates.WithCancellation(ct))
+                await foreach (var tableSnapshot in this.membershipTableManager.MembershipTableUpdates.WithCancellation(cancellation.Token))
                 {
                     this.updates.TryPublish(tableSnapshot.CreateClusterMembershipSnapshot());
                 }
@@ -100,28 +102,19 @@ namespace Orleans.Runtime
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            CancellationTokenSource cancellation = null;
-            var task = Task.CompletedTask;
+            lifecycle.Subscribe(nameof(ClusterMembershipService), ServiceLifecycleStage.RuntimeInitialize, this);
+        }
 
-            Task OnRuntimeInitializeStart(CancellationToken _)
-            {
-                cancellation = new CancellationTokenSource();
-                task = Task.Run(() => this.ProcessMembershipUpdates(cancellation.Token));
-                return Task.CompletedTask;
-            }
+        Task ILifecycleObserver.OnStart(CancellationToken ct)
+        {
+            updateTask = Task.Run(ProcessMembershipUpdates);
+            return Task.CompletedTask;
+        }
 
-            Task OnRuntimeInitializeStop(CancellationToken ct)
-            {
-                cancellation?.Cancel();
-                var shutdownGracePeriod = ct.WhenCancelled(delay: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
-                return Task.WhenAny(shutdownGracePeriod, task);
-            }
-
-            lifecycle.Subscribe(
-                nameof(ClusterMembershipService),
-                ServiceLifecycleStage.RuntimeInitialize,
-                OnRuntimeInitializeStart,
-                OnRuntimeInitializeStop);
+        async Task ILifecycleObserver.OnStop(CancellationToken ct)
+        {
+            cancellation?.Cancel();
+            await updateTask.WhenCompletedOrCanceled(ct, gracePeriod: ClusterMembershipOptions.ClusteringShutdownGracePeriod);
         }
 
         void IDisposable.Dispose()

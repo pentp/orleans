@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
 using Orleans.Internal;
+using Tester;
 
 namespace UnitTests.MembershipTests
 {
@@ -61,11 +62,11 @@ namespace UnitTests.MembershipTests
             var adoVariant = GetAdoInvariant();
 
             membershipTable = CreateMembershipTable(logger);
-            membershipTable.InitializeMembershipTable(true).WithTimeout(TimeSpan.FromMinutes(1)).Wait();
+            membershipTable.InitializeMembershipTable(true).WaitWithThrow(TimeSpan.FromMinutes(1));
 
             this.gatewayOptions = Options.Create(new GatewayOptions());
             gatewayListProvider = CreateGatewayListProvider(logger);
-            gatewayListProvider.InitializeGatewayListProvider().WithTimeout(TimeSpan.FromMinutes(1)).Wait();
+            gatewayListProvider.InitializeGatewayListProvider().WaitWithThrow(TimeSpan.FromMinutes(1));
         }
 
         public IGrainFactory GrainFactory => this.environment.GrainFactory;

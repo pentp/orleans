@@ -45,7 +45,7 @@ namespace Orleans.TestingHost
             Console.WriteLine($"{GatewayAddressLog}{localSiloDetails.GatewayAddress.ToParsableString()}");
             Console.WriteLine(StartedLog);
 
-            await cts.Token.WhenCancelled();
+            await Task.Delay(Timeout.Infinite, cts.Token).NoThrow();
 
             await host.StopAsync(CancellationToken.None);
         }
