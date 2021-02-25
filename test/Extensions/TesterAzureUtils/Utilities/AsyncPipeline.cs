@@ -104,7 +104,7 @@ namespace Tester.AzureUtils.Utilities
                     tasks.Add(i.Item2.Task);
             }
 
-            Task.WhenAll(tasks).Wait();
+            Task.WaitAll(tasks.ToArray());
 
             if (null != whiteBox)
             {

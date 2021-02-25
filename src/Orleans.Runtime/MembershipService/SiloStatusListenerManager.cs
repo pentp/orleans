@@ -143,7 +143,7 @@ namespace Orleans.Runtime.MembershipService
             var task = Task.CompletedTask;
             CancellationTokenSource cancellation = null;
 
-            lifecycle.Subscribe(nameof(SiloStatusListenerManager), ServiceLifecycleStage.AfterRuntimeGrainServices, OnStart, _ => Task.CompletedTask);
+            lifecycle.Subscribe(nameof(SiloStatusListenerManager), ServiceLifecycleStage.AfterRuntimeGrainServices, OnStart);
             lifecycle.Subscribe(nameof(SiloStatusListenerManager), ServiceLifecycleStage.RuntimeInitialize, _ => Task.CompletedTask, OnStop);
 
             Task OnStart(CancellationToken ct)
@@ -156,7 +156,7 @@ namespace Orleans.Runtime.MembershipService
             Task OnStop(CancellationToken ct)
             {
                 cancellation?.Cancel();
-                return Task.WhenAny(ct.WhenCancelled(), task);
+                return task.WhenCompletedOrCanceled(ct).AsTask();
             }
         }
     }

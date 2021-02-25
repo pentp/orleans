@@ -530,7 +530,7 @@ namespace Orleans.Runtime.GrainDirectory
         {
             _shutdownCancellation.Cancel();
             _refreshTimer?.Dispose();
-            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, ct.WhenCancelled()) : Task.CompletedTask;
+            return _runTask.WhenCompletedOrCanceled(ct).AsTask();
         }
 
         internal class TestAccessor

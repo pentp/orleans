@@ -100,7 +100,7 @@ namespace Orleans.Runtime.MembershipService
         {
             this.cleanupDefunctSilosTimer?.Dispose();
             _runTask?.Ignore();
-            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, ct.WhenCancelled()) : Task.CompletedTask;
+            return _runTask.WhenCompletedOrCanceled(ct).AsTask();
         }
 
         bool IHealthCheckable.CheckHealth(DateTime lastCheckTime, out string reason)

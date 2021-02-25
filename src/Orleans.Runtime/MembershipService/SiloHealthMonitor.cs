@@ -127,11 +127,7 @@ namespace Orleans.Runtime.MembershipService
                 _pingTimer.Dispose();
             }
 
-            if (_runTask is { IsCompleted: false } task)
-            {
-                return Task.WhenAny(task, cancellationToken.WhenCancelled());
-            }
-            return Task.CompletedTask;
+            return _runTask.WhenCompletedOrCanceled(cancellationToken).AsTask();
         }
 
         private async Task Run()

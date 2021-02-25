@@ -30,7 +30,7 @@ namespace Orleans.Streams
         {
             if (StreamResourceTestControl.TestOnlySuppressStreamCleanupOnDeactivate)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             var promises = new List<Task>();
@@ -49,6 +49,6 @@ namespace Orleans.Streams
             allStreams.Clear();
         }
 
-        public ValueTask DisposeAsync() => new(this.Cleanup(cleanupProducers: true, cleanupConsumers: false));
+        public ValueTask DisposeAsync() => new(Cleanup(cleanupProducers: true, cleanupConsumers: false));
     }
 }

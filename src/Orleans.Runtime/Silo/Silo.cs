@@ -33,6 +33,7 @@ namespace Orleans.Runtime
         /// <summary> Standard name for Primary silo. </summary>
         public const string PrimarySiloName = "Primary";
         private static readonly TimeSpan WaitForMessageToBeQueuedForOutbound = TimeSpan.FromSeconds(2);
+
         private readonly ILocalSiloDetails siloDetails;
         private readonly MessageCenter messageCenter;
         private readonly LocalGrainDirectory localGrainDirectory;
@@ -108,7 +109,6 @@ namespace Orleans.Runtime
             services.GetService<SerializationManager>().RegisterSerializers(services.GetService<IApplicationPartManager>());
 
             this.Services = services;
-
             //set PropagateActivityId flag from node config
             IOptions<SiloMessagingOptions> messagingOptions = services.GetRequiredService<IOptions<SiloMessagingOptions>>();
             RequestContext.PropagateActivityId = messagingOptions.Value.PropagateActivityId;
@@ -329,8 +329,7 @@ namespace Orleans.Runtime
             var stopWatch = Stopwatch.StartNew();
 
             // Load and init grain services before silo becomes active.
-            await StartAsyncTaskWithPerfAnalysis("Init grain services",
-                () => CreateGrainServices(), stopWatch);
+            await StartAsyncTaskWithPerfAnalysis("Init grain services", CreateGrainServices, stopWatch);
 
             try
             {
@@ -547,7 +546,7 @@ namespace Orleans.Runtime
                 // Signal to all awaiters that the silo has terminated.
                 logger.LogInformation((int)ErrorCode.SiloShutDown, "Silo shutdown completed");
                 SafeExecute(LocalScheduler.Stop);
-                await Task.Run(() => this.siloTerminatedTask.TrySetResult(0)).ConfigureAwait(false);
+                siloTerminatedTask.TrySetResult(0);
             }
         }
 
@@ -589,32 +588,30 @@ namespace Orleans.Runtime
                 return;
 
             bool gracefully = !ct.IsCancellationRequested;
-            try
-            {
-                if (gracefully)
+            if (gracefully)
+                try
                 {
                     // Stop LocalGrainDirectory
-                    await LocalScheduler.QueueActionAsync(() => localGrainDirectory.Stop(), localGrainDirectory.CacheValidator);
+                    await LocalScheduler.QueueActionAsync(localGrainDirectory.Stop, localGrainDirectory.CacheValidator);
 
-                    SafeExecute(() => catalog.DeactivateAllActivations().Wait(ct));
+                    await SafeExecute(catalog.DeactivateAllActivations).WhenCompletedOrCanceled(ct);
 
                     // Wait for all queued message sent to OutboundMessageQueue before MessageCenter stop and OutboundMessageQueue stop.
-                    await Task.Delay(WaitForMessageToBeQueuedForOutbound);
+                    await Task.Delay(WaitForMessageToBeQueuedForOutbound, ct).NoThrow();
                 }
-            }
-            catch (Exception exc)
-            {
-                logger.LogError(
-                    (int)ErrorCode.SiloFailedToStopMembership,
-                    exc,
-                    "Failed to shutdown gracefully. About to terminate ungracefully");
-                this.isFastKilledNeeded = true;
-            }
+                catch (Exception exc)
+                {
+                    logger.LogError(
+                        (int)ErrorCode.SiloFailedToStopMembership,
+                        exc,
+                        "Failed to shutdown gracefully. About to terminate ungracefully");
+                    this.isFastKilledNeeded = true;
+                }
 
             // Stop the gateway
             SafeExecute(messageCenter.StopAcceptingClientMessages);
 
-            SafeExecute(() => catalog?.Stop());
+            await SafeExecute(catalog.Stop).NoThrow();
         }
 
         private async Task OnActiveStop(CancellationToken ct)
@@ -655,6 +652,12 @@ namespace Orleans.Runtime
         private void SafeExecute(Action action)
         {
             Utils.SafeExecute(action, logger, "Silo.Stop");
+        }
+
+        private Task SafeExecute(Func<Task> action)
+        {
+            return OrleansTaskExtentions.SafeExecute(action)
+                .LogException(ex => logger.Warn(ErrorCode.Runtime_Error_100325, $"Ignoring {ex.GetType().FullName} exception thrown from an action called by Silo.Stop.", ex));
         }
 
         internal void RegisterSystemTarget(SystemTarget target) => this.catalog.RegisterSystemTarget(target);

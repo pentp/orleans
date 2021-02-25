@@ -397,7 +397,7 @@ namespace Orleans.Streams
 
         private Task UpdateResponsibilities(HashSet<SiloAddress> activeSilos)
         {
-            if (base.Cancellation.IsCancellationRequested) return;
+            if (base.Cancellation.IsCancellationRequested) return Task.CompletedTask;
             var activeSiloCount = Math.Max(1, activeSilos.Count);
             this.responsibility = this.allQueuesCount / activeSiloCount;
             var overflow = this.allQueuesCount % activeSiloCount;

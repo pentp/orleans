@@ -123,7 +123,7 @@ namespace Orleans.Runtime.Messaging
 
                 if (closeTasks.Count > 0)
                 {
-                    await Task.WhenAny(Task.WhenAll(closeTasks), cancellationToken.WhenCancelled());
+                    await Task.WhenAll(closeTasks).WhenCompletedOrCanceled(cancellationToken);
                 }
 
                 await this.connectionManager.Closed;

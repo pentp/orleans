@@ -205,11 +205,10 @@ namespace Orleans.Runtime
             this.gcTimerTask = this.RunActivationCollectionLoop();
         }
 
-        internal async Task Stop()
+        internal Task Stop()
         {
             this.gcTimer?.Dispose();
-
-            if (this.gcTimerTask is Task task) await task;
+            return gcTimerTask ?? Task.CompletedTask;
         }
 
         private async Task RunActivationCollectionLoop()
@@ -796,7 +795,7 @@ namespace Orleans.Runtime
         internal async Task DeactivateActivation(ActivationData activationData)
         {
             TaskCompletionSource<object> tcs;
-            var cts = new CancellationTokenSource(this.collectionOptions.Value.DeactivationTimeout);
+            using var cts = new CancellationTokenSource(this.collectionOptions.Value.DeactivationTimeout);
 
             lock (activationData)
             {

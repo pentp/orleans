@@ -102,10 +102,10 @@ namespace Orleans.Streams
                 return Task.FromException(exc);
             }
 
-            if (queueAdapterCache.Value is { } queueAdapter)
+            if (queueAdapterCache.Value is { } cache)
                 try
                 {
-                    queueCache = queueAdapter.CreateQueueCache(QueueId);
+                    queueCache = cache.CreateQueueCache(QueueId);
                 }
                 catch (Exception exc)
                 {

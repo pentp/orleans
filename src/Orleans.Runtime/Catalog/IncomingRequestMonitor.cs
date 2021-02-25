@@ -61,7 +61,7 @@ namespace Orleans.Runtime
         Task ILifecycleObserver.OnStop(CancellationToken ct)
         {
             _scanPeriodTimer.Dispose();
-            return _runTask is { IsCompleted: false } t ? Task.WhenAny(t, ct.WhenCancelled()) : Task.CompletedTask;
+            return _runTask.WhenCompletedOrCanceled(ct).AsTask();
         }
 
         private async Task Run()
