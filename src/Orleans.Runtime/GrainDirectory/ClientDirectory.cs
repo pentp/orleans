@@ -422,7 +422,7 @@ namespace Orleans.Runtime.GrainDirectory
                     return;
                 }
 
-                _nextPublishTask = this.ScheduleTask(() => PublishUpdates());
+                _nextPublishTask = this.ScheduleTask(PublishUpdates);
             }
         }
 

@@ -7,7 +7,6 @@ using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.Configuration;
 using Orleans.Internal;
-using Orleans.Runtime.Providers;
 using Orleans.Serialization;
 
 namespace Orleans.Runtime.MembershipService
@@ -23,12 +22,8 @@ namespace Orleans.Runtime.MembershipService
             this.serviceProvider = serviceProvider;
             this.logger = logger;
         }
-        public async Task InitializeMembershipTable(bool tryInitTableVersion)
-        {
-            this.grain = await GetMembershipTable();
-        }
 
-        private async Task<IMembershipTableSystemTarget> GetMembershipTable()
+        public Task InitializeMembershipTable(bool tryInitTableVersion)
         {
             var options = this.serviceProvider.GetRequiredService<IOptions<DevelopmentClusterMembershipOptions>>().Value;
             if (options.PrimarySiloEndpoint == null)
@@ -47,17 +42,13 @@ namespace Orleans.Runtime.MembershipService
             }
 
             var grainFactory = this.serviceProvider.GetRequiredService<IInternalGrainFactory>();
-            var result = grainFactory.GetSystemTarget<IMembershipTableSystemTarget>(Constants.SystemMembershipTableType, SiloAddress.New(options.PrimarySiloEndpoint, 0));
-            if (isPrimarySilo)
-            {
-                await this.WaitForTableGrainToInit(result);
-            }
+            grain = grainFactory.GetSystemTarget<IMembershipTableSystemTarget>(Constants.SystemMembershipTableType, SiloAddress.New(options.PrimarySiloEndpoint, 0));
 
-            return result;
+            return isPrimarySilo ? WaitForTableGrainToInit() : Task.CompletedTask;
         }
 
         // Only used with MembershipTableGrain to wait for primary to start.
-        private async Task WaitForTableGrainToInit(IMembershipTableSystemTarget membershipTableSystemTarget)
+        private async Task WaitForTableGrainToInit()
         {
             var timespan = Debugger.IsAttached ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(5);
             // This is a quick temporary solution to enable primary node to start fully before secondaries.
@@ -66,14 +57,13 @@ namespace Orleans.Runtime.MembershipService
             {
                 try
                 {
-                    await membershipTableSystemTarget.ReadAll().WithTimeout(timespan, $"MembershipGrain trying to read all content of the membership table, failed due to timeout {timespan}");
+                    await grain.ReadAll().WithTimeout(timespan);
                     logger.Info(ErrorCode.MembershipTableGrainInit2, "-Connected to membership table provider.");
                     return;
                 }
                 catch (Exception exc)
                 {
-                    var type = exc.GetBaseException().GetType();
-                    if (type == typeof(TimeoutException) || type == typeof(OrleansException))
+                    if (exc.GetBaseException() is TimeoutException or OrleansException)
                     {
                         logger.Info(
                             ErrorCode.MembershipTableGrainInit3,

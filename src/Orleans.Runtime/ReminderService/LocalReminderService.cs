@@ -11,8 +11,8 @@ namespace Orleans.Runtime.ReminderService
     internal sealed class LocalReminderService : GrainService, IReminderService
     {
         private const int InitialReadRetryCountBeforeFastFailForUpdates = 2;
-        private static readonly TimeSpan InitialReadMaxWaitTimeForUpdates = TimeSpan.FromSeconds(20);
-        private static readonly TimeSpan InitialReadRetryPeriod = TimeSpan.FromSeconds(30);
+        private static TimeSpan InitialReadMaxWaitTimeForUpdates => TimeSpan.FromSeconds(20);
+        private static TimeSpan InitialReadRetryPeriod => TimeSpan.FromSeconds(30);
         private readonly ILogger logger;
         private readonly Dictionary<ReminderIdentity, LocalReminderData> localReminders = new();
         private readonly IReminderTable reminderTable;
@@ -52,14 +52,14 @@ namespace Orleans.Runtime.ReminderService
         public override async Task Start()
         {
             // confirm that it can access the underlying store, as after this the ReminderService will load in the background, without the opportunity to prevent the Silo from starting
-            await reminderTable.Init().WithTimeout(initTimeout, $"ReminderTable Initialization failed due to timeout {initTimeout}");
+            await reminderTable.Init().WithTimeout(initTimeout, t => $"ReminderTable Initialization failed due to timeout {t}");
 
-            await base.Start();
+            _ = base.Start();
         }
 
         public async override Task Stop()
         {
-            await base.Stop();
+            _ = base.Stop();
 
             if (listRefreshTimer != null)
             {

@@ -262,7 +262,7 @@ namespace Orleans.Runtime
 
             RegisterSystemTarget(catalog);
             await LocalScheduler.QueueActionAsync(catalog.Start, catalog)
-                .WithTimeout(initTimeout, $"Starting Catalog failed due to timeout {initTimeout}");
+                .WithTimeout(initTimeout, t => $"Starting Catalog failed due to timeout {t}");
 
             // SystemTarget for provider init calls
             this.fallbackScheduler = Services.GetRequiredService<FallbackSystemTarget>();
@@ -343,7 +343,7 @@ namespace Orleans.Runtime
                 {
                     var deploymentLoadPublisher = Services.GetRequiredService<DeploymentLoadPublisher>();
                     await this.LocalScheduler.QueueTask(deploymentLoadPublisher.Start, deploymentLoadPublisher)
-                        .WithTimeout(this.initTimeout, $"Starting DeploymentLoadPublisher failed due to timeout {initTimeout}");
+                        .WithTimeout(this.initTimeout, t => $"Starting DeploymentLoadPublisher failed due to timeout {t}");
                     logger.Debug("Silo deployment load publisher started successfully.");
                 }
 
@@ -389,7 +389,7 @@ namespace Orleans.Runtime
                     // so, we have the view of the membership in the consistentRingProvider. We can start the reminder service
                     this.reminderServiceContext = (this.reminderService as IGrainContext) ?? this.fallbackScheduler;
                     await this.LocalScheduler.QueueTask(this.reminderService.Start, this.reminderServiceContext)
-                        .WithTimeout(this.initTimeout, $"Starting ReminderService failed due to timeout {initTimeout}");
+                        .WithTimeout(this.initTimeout, t => $"Starting ReminderService failed due to timeout {t}");
                     this.logger.Debug("Reminder service started successfully.");
                 }
             }
@@ -416,7 +416,7 @@ namespace Orleans.Runtime
             RegisterSystemTarget(grainService);
             grainServices.Add(grainService);
 
-            await this.LocalScheduler.QueueTask(() => grainService.Init(Services), grainService).WithTimeout(this.initTimeout, $"GrainService Initializing failed due to timeout {initTimeout}");
+            await this.LocalScheduler.QueueTask(() => grainService.Init(Services), grainService).WithTimeout(this.initTimeout, t => $"GrainService Initializing failed due to timeout {t}");
             logger.Info($"Grain Service {service.GetType().FullName} registered successfully.");
         }
 
@@ -424,7 +424,7 @@ namespace Orleans.Runtime
         {
             var grainService = (GrainService)service;
 
-            await this.LocalScheduler.QueueTask(grainService.Start, grainService).WithTimeout(this.initTimeout, $"Starting GrainService failed due to timeout {initTimeout}");
+            await this.LocalScheduler.QueueTask(grainService.Start, grainService).WithTimeout(this.initTimeout, t => $"Starting GrainService failed due to timeout {t}");
             logger.Info($"Grain Service {service.GetType().FullName} started successfully.");
         }
 

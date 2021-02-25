@@ -206,64 +206,66 @@ namespace Orleans.Internal
         /// <param name="timeout">Amount of time to wait before timing out</param>
         /// <param name="exceptionMessage">Text to put into the timeout exception message</param>
         /// <exception cref="TimeoutException">If we time out we will get this exception</exception>
-        /// <returns>The completed task</returns>
-        public static async Task WithTimeout(this Task taskToComplete, TimeSpan timeout, string exceptionMessage = null)
+        /// <returns>An awaitable with the given timeout</returns>
+        public static WithTimeoutAwaiter WithTimeout(this Task taskToComplete, TimeSpan timeout, Func<TimeSpan, string> exceptionMessage = null) => new(taskToComplete, timeout, exceptionMessage);
+
+        public readonly struct WithTimeoutAwaiter : ICriticalNotifyCompletion
         {
-            if (taskToComplete.IsCompleted)
+            private readonly Task _task;
+            private readonly CancellationTokenSource _cancellation;
+            private readonly Func<TimeSpan, string> _message;
+            private readonly TimeSpan _timeout;
+
+            public WithTimeoutAwaiter(Task task, TimeSpan timeout, Func<TimeSpan, string> message)
             {
-                await taskToComplete;
-                return;
+                _task = task;
+                _timeout = timeout;
+                if (task.IsCompleted || timeout == Timeout.InfiniteTimeSpan)
+                {
+                    _cancellation = null;
+                    _message = null;
+                }
+                else
+                {
+                    _cancellation = new(timeout);
+                    _message = message;
+                }
             }
 
-            var timeoutCancellationTokenSource = new CancellationTokenSource();
-            var completedTask = await Task.WhenAny(taskToComplete, Task.Delay(timeout, timeoutCancellationTokenSource.Token));
+            public WithTimeoutAwaiter GetAwaiter() => this;
+            public bool IsCompleted => _task.IsCompleted;
+            void INotifyCompletion.OnCompleted(Action action) => throw new NotSupportedException();
 
-            // We got done before the timeout, or were able to complete before this code ran, return the result
-            if (taskToComplete == completedTask)
+            public void UnsafeOnCompleted(Action action)
             {
-                timeoutCancellationTokenSource.Cancel();
-                // Await this so as to propagate the exception correctly
-                await taskToComplete;
-                return;
+                if (_cancellation != null)
+                {
+                    var cont = new Continuation { Action = action };
+                    _cancellation.Token.UnsafeRegister(s => ((Continuation)s).MoveNext(), cont);
+                    action = cont.MoveNext;
+                }
+                _task.GetAwaiter().UnsafeOnCompleted(action);
             }
 
-            // We did not complete before the timeout, we fire and forget to ensure we observe any exceptions that may occur
-            taskToComplete.Ignore();
-            var errorMessage = exceptionMessage ?? $"WithTimeout has timed out after {timeout}";
-            throw new TimeoutException(errorMessage);
-        }
-
-        /// <summary>
-        /// This will apply a timeout delay to the task, allowing us to exit early
-        /// </summary>
-        /// <param name="taskToComplete">The task we will timeout after timeSpan</param>
-        /// <param name="timeSpan">Amount of time to wait before timing out</param>
-        /// <param name="exceptionMessage">Text to put into the timeout exception message</param>
-        /// <exception cref="TimeoutException">If we time out we will get this exception</exception>
-        /// <exception cref="TimeoutException">If we time out we will get this exception</exception>
-        /// <returns>The value of the completed task</returns>
-        public static async Task<T> WithTimeout<T>(this Task<T> taskToComplete, TimeSpan timeSpan, string exceptionMessage = null)
-        {
-            if (taskToComplete.IsCompleted)
+            private sealed class Continuation
             {
-                return await taskToComplete;
+                public Action Action;
+                public void MoveNext() => Interlocked.Exchange(ref Action, null)?.Invoke();
             }
 
-            var timeoutCancellationTokenSource = new CancellationTokenSource();
-            var completedTask = await Task.WhenAny(taskToComplete, Task.Delay(timeSpan, timeoutCancellationTokenSource.Token));
-
-            // We got done before the timeout, or were able to complete before this code ran, return the result
-            if (taskToComplete == completedTask)
+            public void GetResult()
             {
-                timeoutCancellationTokenSource.Cancel();
-                // Await this so as to propagate the exception correctly
-                return await taskToComplete;
+                _cancellation?.Dispose();
+                if (_task.IsCompleted)
+                {
+                    _task.GetAwaiter().GetResult();
+                }
+                else
+                {
+                    _task.Ignore();
+                    throw new TimeoutException(_message?.Invoke(_timeout) ?? $"WithTimeout has timed out after {_timeout}");
+                }
             }
-
-            // We did not complete before the timeout, we fire and forget to ensure we observe any exceptions that may occur
-            taskToComplete.Ignore();
-            var errorMessage = exceptionMessage ?? $"WithTimeout has timed out after {timeSpan}";
-            throw new TimeoutException(errorMessage);
         }
 
         /// <summary>

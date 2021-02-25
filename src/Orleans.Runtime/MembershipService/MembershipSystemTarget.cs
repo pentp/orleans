@@ -91,7 +91,7 @@ namespace Orleans.Runtime.MembershipService
             try
             {
                 var probeTask = this.ProbeInternal(target, probeNumber);
-                await probeTask.WithTimeout(probeTimeout, exceptionMessage: $"Requested probe timeout {probeTimeout} exceeded");
+                await probeTask.WithTimeout(probeTimeout, exceptionMessage: t => $"Requested probe timeout {t} exceeded");
 
                 result = new IndirectProbeResponse
                 {
