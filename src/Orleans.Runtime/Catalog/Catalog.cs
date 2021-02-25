@@ -698,8 +698,8 @@ namespace Orleans.Runtime
 
         private async Task DeactivateActivationsFromCollector(List<ActivationData> list)
         {
-            var cts = new CancellationTokenSource(this.collectionOptions.Value.DeactivationTimeout);
-            var mtcs = new MultiTaskCompletionSource(list.Count);
+            using var cts = new CancellationTokenSource(this.collectionOptions.Value.DeactivationTimeout);
+            var tasks = new Task[list.Count];
 
             logger.Info(ErrorCode.Catalog_ShutdownActivations_1, "DeactivateActivationsFromCollector: total {0} to promptly Destroy.", list.Count);
             CounterStatistic.FindOrCreate(StatisticNames.CATALOG_ACTIVATION_SHUTDOWN_VIA_COLLECTION).IncrementBy(list.Count);
@@ -710,21 +710,11 @@ namespace Orleans.Runtime
                 lock (activationData)
                 {
                     // Continue deactivation when ready
-                    activationData.AddOnInactive(async () =>
-                    {
-                        try
-                        {
-                            await DestroyActivation(activationData, cts.Token);
-                        }
-                        finally
-                        {
-                            mtcs.SetOneResult();
-                        }
-                    });
+                    tasks[i] = activationData.AddOnInactive(() => DestroyActivation(activationData, cts.Token));
                 }
             }
 
-            await mtcs.Task;
+            await Task.WhenAll(tasks);
         }
 
         // To be called fro within Activation context.
@@ -762,7 +752,10 @@ namespace Orleans.Runtime
                     }
                     else // busy, so destroy later.
                     {
-                        data.AddOnInactive(() => _ = DestroyActivation(data, cts.Token));
+                        data.AddOnInactive(() =>
+                        {
+                            _ = DestroyActivation(data, cts.Token);
+                        });
                     }
                 }
                 else if (data.State == ActivationState.Create)
@@ -792,9 +785,9 @@ namespace Orleans.Runtime
             }
         }
 
-        internal async Task DeactivateActivation(ActivationData activationData)
+        private async Task DeactivateActivation(ActivationData activationData)
         {
-            TaskCompletionSource<object> tcs;
+            Task task;
             using var cts = new CancellationTokenSource(this.collectionOptions.Value.DeactivationTimeout);
 
             lock (activationData)
@@ -802,27 +795,17 @@ namespace Orleans.Runtime
                 if (activationData.State != ActivationState.Valid)
                     return; // Nothing to do
 
-                tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-
                 // Don't accept any new messages
                 activationData.PrepareForDeactivation();
                 this.activationCollector.TryCancelCollection(activationData);
 
                 // Continue deactivation when ready
-                activationData.AddOnInactive(async () =>
-                {
-                    try
-                    {
-                        await DestroyActivation(activationData, cts.Token);
-                    }
-                    finally
-                    {
-                        tcs.SetResult(null);
-                    }
-                });
+                task = activationData.AddOnInactive(() => DestroyActivation(activationData, cts.Token));
             }
 
-            await tcs.Task.WithCancellation(cts.Token);
+            var res = await task.WhenCompletedOrCanceled(cts.Token);
+            cts.Token.ThrowIfCancellationRequested();
+            res.GetAwaiter().GetResult();
         }
 
         private async Task DestroyActivation(ActivationData activationData, CancellationToken ct)
@@ -845,8 +828,6 @@ namespace Orleans.Runtime
                 {
                     activationData.SetState(ActivationState.Invalid);
                 }
-                // Capture grainInstance since UnregisterMessageTarget will set it to null...
-                var grainInstance = activationData.GrainInstance;
                 UnregisterMessageTarget(activationData);
                 RerouteAllQueuedMessages(activationData, null, "Finished Destroy Activation");
                 await activationData.DisposeAsync();
@@ -858,15 +839,13 @@ namespace Orleans.Runtime
         /// complete and commit outstanding transactions before deleting it.
         /// To be called not from within Activation context, so can be awaited.
         /// </summary>
-        /// <param name="list"></param>
-        /// <returns></returns>
-        internal async Task DeactivateActivations(List<ActivationData> list)
+        private Task DeactivateActivations(List<ActivationData> list)
         {
-            if (list == null || list.Count == 0) return;
+            if (list == null || list.Count == 0) return Task.CompletedTask;
 
             if (logger.IsEnabled(LogLevel.Debug)) logger.Debug("DeactivateActivations: {0} activations.", list.Count);
 
-            await Task.WhenAll(list.Select(DeactivateActivation));
+            return Task.WhenAll(list.Select(DeactivateActivation));
         }
 
         public Task DeactivateAllActivations()

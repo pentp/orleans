@@ -558,6 +558,11 @@ namespace Orleans.Runtime
             {
                 if (OnInactive == null)
                 {
+                    if (!IsCurrentlyExecuting)
+                    {
+                        action();
+                        return;
+                    }
                     OnInactive = new List<Action>();
                 }
                 OnInactive.Add(action);
@@ -565,6 +570,28 @@ namespace Orleans.Runtime
                 {
                     RunOnInactive();
                 }
+            }
+        }
+
+        public Task AddOnInactive(Func<Task> action)
+        {
+            lock (this)
+            {
+                if (OnInactive == null)
+                {
+                    if (!IsCurrentlyExecuting)
+                    {
+                        return action();
+                    }
+                    OnInactive = new List<Action>();
+                }
+                var task = new Task<Task>(action);
+                OnInactive.Add(task.Start);
+                if (!IsCurrentlyExecuting)
+                {
+                    RunOnInactive();
+                }
+                return task.Unwrap();
             }
         }
 
