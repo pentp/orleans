@@ -53,10 +53,10 @@ namespace Orleans.Runtime
                     maxWait = true;
                 }
 
-                var task = await Task.Delay(delay, cancellation.Token).NoThrowDefaultScheduler();
+                var task = await Task.Delay(delay, cancellation.Token).NoThrow();
                 if (maxWait && !task.IsCanceled)
                 {
-                    task = await Task.Delay(int.MaxValue, cancellation.Token).NoThrowDefaultScheduler();
+                    task = await Task.Delay(int.MaxValue, cancellation.Token).NoThrow();
                 }
                 if (task.IsCanceled)
                 {

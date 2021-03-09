@@ -156,7 +156,7 @@ namespace Orleans.Runtime.MembershipService
                     }
 
                     var failedSilos = await CheckClusterConnectivity(activeSilos.ToArray());
-                    var successfulSilos = activeSilos.Where(s => !failedSilos.Contains(s)).ToList();
+                    var successfulSilos = activeSilos.FindAll(s => !failedSilos.Contains(s));
 
                     // If there were no failures, terminate the loop and return without error.
                     if (failedSilos.Count == 0) break;
@@ -201,27 +201,18 @@ namespace Orleans.Runtime.MembershipService
             {
                 if (members.Length == 0) return new List<SiloAddress>();
 
-                var tasks = new List<Task<bool>>(members.Length);
-
                 this.log.LogInformation(
                     (int)ErrorCode.MembershipSendingPreJoinPing,
                     "About to send pings to {Count} nodes in order to validate communication in the Joining state. Pinged nodes = {Nodes}",
                     members.Length,
                     Utils.EnumerableToString(members));
 
-                var timeout = this.clusterMembershipOptions.ProbeTimeout;
-                foreach (var silo in members)
-                {
-                    tasks.Add(ProbeSilo(silo, timeout));
-                }
-
-                await Task.WhenAll(tasks).NoThrow();
-                // Ignore exceptions for now.
+                var probes = await Task.WhenAll(Array.ConvertAll(members, ProbeSilo));
 
                 var failed = new List<SiloAddress>();
-                for (var i = 0; i < tasks.Count; i++)
+                for (var i = 0; i < probes.Length; i++)
                 {
-                    if (tasks[i].Status != TaskStatus.RanToCompletion || !tasks[i].GetAwaiter().GetResult())
+                    if (!probes[i])
                     {
                         failed.Add(members[i]);
                     }
@@ -230,13 +221,13 @@ namespace Orleans.Runtime.MembershipService
                 return failed;
             }
 
-            async Task<bool> ProbeSilo(SiloAddress silo, TimeSpan timeout)
+            async Task<bool> ProbeSilo(SiloAddress silo)
             {
+                var timeout = clusterMembershipOptions.ProbeTimeout;
                 Exception exception = null;
                 try
                 {
-                    using var cancellation = new CancellationTokenSource(timeout);
-                    var probeTask = await siloProber.Probe(silo, 0).WhenCompletedOrCanceled(cancellation.Token);
+                    var probeTask = await siloProber.Probe(silo, 0).WithTimeout(timeout).NoThrow();
                     if (probeTask.IsCompletedSuccessfully)
                         return true;
 

@@ -33,7 +33,6 @@ namespace Orleans.Runtime
         /// <summary> Standard name for Primary silo. </summary>
         public const string PrimarySiloName = "Primary";
         private static readonly TimeSpan WaitForMessageToBeQueuedForOutbound = TimeSpan.FromSeconds(2);
-
         private readonly ILocalSiloDetails siloDetails;
         private readonly MessageCenter messageCenter;
         private readonly LocalGrainDirectory localGrainDirectory;
@@ -109,6 +108,7 @@ namespace Orleans.Runtime
             services.GetService<SerializationManager>().RegisterSerializers(services.GetService<IApplicationPartManager>());
 
             this.Services = services;
+
             //set PropagateActivityId flag from node config
             IOptions<SiloMessagingOptions> messagingOptions = services.GetRequiredService<IOptions<SiloMessagingOptions>>();
             RequestContext.PropagateActivityId = messagingOptions.Value.PropagateActivityId;

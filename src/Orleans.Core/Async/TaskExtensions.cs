@@ -519,34 +519,18 @@ namespace Orleans.Internal
         /// Returns an awaitable that does not throw exceptions.
         /// The caller is responsible for observing any exceptions if necessary.
         /// </summary>
-        public static NoThrowAwaiter NoThrow(this Task task) => new(task);
+        public static NoThrowAwaiter<Task> NoThrow(this Task task) => new(task);
+        public static NoThrowAwaiter<Task<T>> NoThrow<T>(this Task<T> task) => new(task);
 
-        public readonly struct NoThrowAwaiter : ICriticalNotifyCompletion
+        public readonly struct NoThrowAwaiter<T> : ICriticalNotifyCompletion where T:Task
         {
-            private readonly Task _task;
-            internal NoThrowAwaiter(Task task) => _task = task;
-            public NoThrowAwaiter GetAwaiter() => this;
+            private readonly T _task;
+            internal NoThrowAwaiter(T task) => _task = task;
+            public NoThrowAwaiter<T> GetAwaiter() => this;
             public bool IsCompleted => _task.IsCompleted;
             public void OnCompleted(Action action) => _task.GetAwaiter().OnCompleted(action);
             public void UnsafeOnCompleted(Action action) => _task.GetAwaiter().UnsafeOnCompleted(action);
-            public Task GetResult() => _task;
-        }
-
-        /// <summary>
-        /// Returns an awaitable that does not throw exceptions and runs continuations on the default scheduler.
-        /// The caller is responsible for observing any exceptions if necessary.
-        /// </summary>
-        public static NoThrowCfgAwaiter NoThrowDefaultScheduler(this Task task) => new(task);
-
-        public readonly struct NoThrowCfgAwaiter : ICriticalNotifyCompletion
-        {
-            private readonly Task _task;
-            internal NoThrowCfgAwaiter(Task task) => _task = task;
-            public NoThrowCfgAwaiter GetAwaiter() => this;
-            public bool IsCompleted => _task.IsCompleted;
-            public void OnCompleted(Action action) => _task.ConfigureAwait(false).GetAwaiter().OnCompleted(action);
-            public void UnsafeOnCompleted(Action action) => _task.ConfigureAwait(false).GetAwaiter().UnsafeOnCompleted(action);
-            public Task GetResult() => _task;
+            public T GetResult() => _task;
         }
     }
 }
