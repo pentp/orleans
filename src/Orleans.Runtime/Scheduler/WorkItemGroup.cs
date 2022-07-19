@@ -196,7 +196,7 @@ namespace Orleans.Runtime.Scheduler
                     {
                         log.LogTrace(
                         "About to execute task {Task} in GrainContext={GrainContext}",
-                        OrleansTaskExtentions.ToString(task),
+                        OrleansTaskExtensions.ToString(task),
                         this.GrainContext);
                     }
 #endif
@@ -212,7 +212,7 @@ namespace Orleans.Runtime.Scheduler
                             (int)ErrorCode.SchedulerExceptionFromExecute,
                             ex,
                             "Worker thread caught an exception thrown from Execute by task {Task}",
-                            OrleansTaskExtentions.ToString(task));
+                            OrleansTaskExtensions.ToString(task));
                         throw;
                     }
                     finally
@@ -225,7 +225,7 @@ namespace Orleans.Runtime.Scheduler
                             this.log.LogWarning(
                                 (int)ErrorCode.SchedulerTurnTooLong3,
                                 "Task {Task} in WorkGroup {GrainContext} took elapsed time {Duration} for execution, which is longer than {TurnWarningLengthThreshold}. Running on thread {Thread}",
-                                OrleansTaskExtentions.ToString(task),
+                                OrleansTaskExtensions.ToString(task),
                                 this.GrainContext.ToString(),
                                 taskLength.ToString("g"),
                                 schedulingOptions.TurnWarningLengthThreshold,

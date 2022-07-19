@@ -23,6 +23,7 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("CodeGenerator.Tests")]
 
 [assembly: InternalsVisibleTo("Orleans.Reminders")]
+[assembly: InternalsVisibleTo("Orleans.AzureCosmos")]
 
 // Mocking libraries
 [assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")]

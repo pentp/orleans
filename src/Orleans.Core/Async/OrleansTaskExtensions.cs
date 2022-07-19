@@ -1,15 +1,16 @@
 using System;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Orleans.Runtime;
 
 namespace Orleans.Internal
 {
     /// <summary>
     /// Extensions for working with <see cref="Task"/> and <see cref="Task{TResult}"/>.
     /// </summary>
-    internal static class OrleansTaskExtentions
+    internal static class OrleansTaskExtensions
     {
         public static async Task LogException(this Task task, ILogger logger, ErrorCode errorCode, string message)
         {
@@ -224,6 +225,29 @@ namespace Orleans.Internal
             }, waitForCancellation);
 
             return waitForCancellation.Task;
+        }
+
+        /// <summary>
+        /// Creates an awaitable that switches to the default scheduler context if needed.
+        /// More optimal than using <c>Task.Run</c> if already inside an async method.
+        /// </summary>
+        public static ThreadPoolAwaiter SwitchToThreadPool() => new(TaskScheduler.Current == TaskScheduler.Default);
+
+        /// <summary>
+        /// Creates an awaitable that asynchronously yields back to the default scheduler context (similar to <see cref="Task.Yield"/>).
+        /// More optimal than using <c>Task.Run</c> if already inside an async method.
+        /// </summary>
+        public static ThreadPoolAwaiter YieldToThreadPool() => default;
+
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public readonly struct ThreadPoolAwaiter : ICriticalNotifyCompletion
+        {
+            public ThreadPoolAwaiter(bool completed) => IsCompleted = completed;
+            public ThreadPoolAwaiter GetAwaiter() => this;
+            public bool IsCompleted { get; }
+            public void GetResult() { }
+            public void OnCompleted(Action continuation) => ThreadPool.QueueUserWorkItem(s => s(), continuation, preferLocal: true);
+            public void UnsafeOnCompleted(Action continuation) => ThreadPool.UnsafeQueueUserWorkItem(s => s(), continuation, preferLocal: true);
         }
     }
 }

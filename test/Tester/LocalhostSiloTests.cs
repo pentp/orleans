@@ -47,10 +47,13 @@ namespace Tester
             }
             finally
             {
-                await OrleansTaskExtentions.SafeExecute(() => host.StopAsync());
-                await OrleansTaskExtentions.SafeExecute(() => clientHost.StopAsync());
-                Utils.SafeExecute(() => host.Dispose());
-                Utils.SafeExecute(() => clientHost.Dispose());
+                try
+                {
+                    await Task.WhenAll(host.StopAsync(), clientHost.StopAsync());
+                }
+                catch { }
+                host.Dispose();
+                clientHost.Dispose();
             }
         }
 

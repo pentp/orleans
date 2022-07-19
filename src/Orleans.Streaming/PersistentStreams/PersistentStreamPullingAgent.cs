@@ -91,7 +91,7 @@ namespace Orleans.Streams
         /// <returns></returns>
         public Task Initialize()
         {
-            return OrleansTaskExtentions.WrapInTask(() => InitializeInternal());
+            return OrleansTaskExtensions.WrapInTask(InitializeInternal);
         }
 
         private void InitializeInternal()
@@ -131,7 +131,7 @@ namespace Orleans.Streams
 
             try
             {
-                receiverInitTask = OrleansTaskExtentions.SafeExecute(() => receiver.Initialize(this.options.InitQueueTimeout))
+                receiverInitTask = OrleansTaskExtensions.SafeExecute(() => receiver.Initialize(this.options.InitQueueTimeout))
                     .LogException(logger, ErrorCode.PersistentStreamPullingAgent_03, $"QueueAdapterReceiver {QueueId:H} failed to Initialize.");
                 receiverInitTask.Ignore();
             }
@@ -195,7 +195,7 @@ namespace Orleans.Streams
                 this.receiver = null;
                 if (localReceiver != null)
                 {
-                    var task = OrleansTaskExtentions.SafeExecute(() => localReceiver.Shutdown(this.options.InitQueueTimeout));
+                    var task = OrleansTaskExtensions.SafeExecute(() => localReceiver.Shutdown(this.options.InitQueueTimeout));
                     task = task.LogException(logger, ErrorCode.PersistentStreamPullingAgent_07,
                         $"QueueAdapterReceiver {QueueId} failed to Shutdown.");
                     await task;
@@ -769,19 +769,19 @@ namespace Orleans.Streams
             }
 
             // notify consumer about the error or that the data is not available.
-            await OrleansTaskExtentions.ExecuteAndIgnoreException(
+            await OrleansTaskExtensions.ExecuteAndIgnoreException(
                 () => DeliverErrorToConsumer(
                     consumerData, exceptionOccured, batch));
             // record that there was a delivery failure
             if (isDeliveryError)
             {
-                await OrleansTaskExtentions.ExecuteAndIgnoreException(
+                await OrleansTaskExtensions.ExecuteAndIgnoreException(
                     () => streamFailureHandler.OnDeliveryFailure(
                         consumerData.SubscriptionId, streamProviderName, consumerData.StreamId, token));
             }
             else
             {
-                await OrleansTaskExtentions.ExecuteAndIgnoreException(
+                await OrleansTaskExtensions.ExecuteAndIgnoreException(
                        () => streamFailureHandler.OnSubscriptionFailure(
                            consumerData.SubscriptionId, streamProviderName, consumerData.StreamId, token));
             }
@@ -791,7 +791,7 @@ namespace Orleans.Streams
                 try
                 {
                     // notify consumer of faulted subscription, if we can.
-                    await OrleansTaskExtentions.ExecuteAndIgnoreException(
+                    await OrleansTaskExtensions.ExecuteAndIgnoreException(
                         () => DeliverErrorToConsumer(
                             consumerData, new FaultedSubscriptionException(consumerData.SubscriptionId, consumerData.StreamId), batch));
                     // mark subscription as faulted.

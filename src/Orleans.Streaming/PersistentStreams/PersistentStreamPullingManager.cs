@@ -341,7 +341,7 @@ namespace Orleans.Streams
                 agents.Add(agent);
                 deactivatedAgents[queueId] = agent;
                 var agentGrainRef = agent.AsReference<IPersistentStreamPullingAgent>();
-                var task = OrleansTaskExtentions.SafeExecute(agentGrainRef.Shutdown);
+                var task = OrleansTaskExtensions.SafeExecute(agentGrainRef.Shutdown);
                 task = task.LogException(logger, ErrorCode.PersistentStreamPullingManager_11,
                     $"PersistentStreamPullingAgent {agent.QueueId} failed to Shutdown.");
                 removeTasks.Add(task);
