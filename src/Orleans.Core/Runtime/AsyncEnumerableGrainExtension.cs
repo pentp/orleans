@@ -241,7 +241,7 @@ internal sealed partial class AsyncEnumerableGrainExtension : IAsyncEnumerableGr
         try
         {
             // Wait for either the MoveNextAsync task to complete or the polling timeout to elapse.
-            await moveNextTask.WaitAsync(_messagingOptions.ConfiguredResponseTimeout / 2, cancellationToken).SuppressThrowing();
+            await ((Task)moveNextTask).WaitAsync(_messagingOptions.ConfiguredResponseTimeout / 2, cancellationToken).SuppressThrowing();
 
             // Update the enumerator state to indicate that we are not currently waiting for MoveNextAsync to complete.
             // If the MoveNextAsync task completed then clear that now, too.
@@ -338,7 +338,7 @@ internal sealed partial class AsyncEnumerableGrainExtension : IAsyncEnumerableGr
             using var cts = new CancellationTokenSource(_messagingOptions.ResponseTimeout);
             if (enumerator.MoveNextTask is { } task)
             {
-                await task.WaitAsync(cts.Token).SuppressThrowing();
+                await ((Task)task).WaitAsync(cts.Token).SuppressThrowing();
             }
 
             if (enumerator.MoveNextTask is null or { IsCompleted: true } && enumerator.Enumerator is { } value)

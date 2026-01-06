@@ -469,8 +469,7 @@ namespace Orleans.Runtime
 
         public async ValueTask DisposeAsync()
         {
-            using var cts = new CancellationTokenSource();
-            cts.Cancel();
+            using var cts = new CancellationTokenSource(0);
             await StopAsync(cts.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
 
@@ -478,8 +477,7 @@ namespace Orleans.Runtime
         {
             try
             {
-                using var cts = new CancellationTokenSource();
-                cts.Cancel();
+                using var cts = new CancellationTokenSource(0);
                 StopAsync(cts.Token).Wait();
             }
             catch

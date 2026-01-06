@@ -750,7 +750,7 @@ internal sealed partial class ActivationRepartitioner : SystemTarget, IActivatio
         base.Dispose();
         _enableMessageSampling = false;
         _siloStatusOracle.UnSubscribeFromSiloStatusEvents(this);
-        _shutdownCts.Cancel();
+        _shutdown = true;
     }
 
     void ISiloStatusListener.SiloStatusChangeNotification(SiloAddress updatedSilo, SiloStatus status)

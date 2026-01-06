@@ -23,7 +23,7 @@ namespace Orleans.Runtime.Messaging
         private readonly NetworkingTrace trace;
         private readonly CancellationTokenSource shutdownCancellation = new();
         private readonly object lockObj = new object();
-        private readonly TaskCompletionSource<int> closedTaskCompletionSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource closedTaskCompletionSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public ConnectionManager(
             IOptions<ConnectionOptions> connectionOptions,
@@ -297,7 +297,7 @@ namespace Orleans.Runtime.Messaging
             }
             finally
             {
-                this.closedTaskCompletionSource.TrySetResult(0);
+                this.closedTaskCompletionSource.TrySetResult();
             }
         }
 

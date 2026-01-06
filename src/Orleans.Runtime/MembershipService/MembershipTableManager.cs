@@ -822,7 +822,7 @@ namespace Orleans.Runtime.MembershipService
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var tasks = new List<Task>(1);
+            var refreshTask = Task.CompletedTask;
             lifecycle.Subscribe(
                 nameof(MembershipTableManager),
                 ServiceLifecycleStage.RuntimeGrainServices,
@@ -833,17 +833,16 @@ namespace Orleans.Runtime.MembershipService
             {
                 await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
                 await Start();
-                tasks.Add(PeriodicallyRefreshMembershipTable());
+                refreshTask = PeriodicallyRefreshMembershipTable();
             }
 
             async Task OnRuntimeGrainServicesStop(CancellationToken ct)
             {
-                tasks.Add(_suspectOrKillsListTask);
                 _trySuspectOrKillChannel.Writer.TryComplete();
                 this.membershipUpdateTimer.Dispose();
                 _shutdownCts.Cancel();
 
-                var all = Task.WhenAll(tasks);
+                var all = Task.WhenAll(refreshTask, _suspectOrKillsListTask);
                 // Allow some minimum time for graceful shutdown.
                 await all.WaitAsync(ClusterMembershipOptions.ClusteringShutdownGracePeriod).SuppressThrowing();
                 await all.WaitAsync(ct).SuppressThrowing();

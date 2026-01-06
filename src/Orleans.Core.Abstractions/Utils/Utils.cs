@@ -167,6 +167,19 @@ namespace Orleans.Runtime
             catch { }
         }
 
+        public static void SafeExecute(Action action, ILogger? logger = null, string? caller = null)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception exc)
+            {
+                if (logger != null)
+                    LogIgnoredException(logger, exc, caller);
+            }
+        }
+
         public static async Task SafeExecuteAsync(Task task)
         {
             try

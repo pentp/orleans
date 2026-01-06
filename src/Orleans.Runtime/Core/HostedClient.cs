@@ -220,9 +220,9 @@ namespace Orleans.Runtime
             if (this.disposing) return;
             this.disposing = true;
             _serviceProviderScope.Dispose();
-            Utils.SafeExecute(() => this.siloMessageCenter.SetHostedClient(null));
-            Utils.SafeExecute(() => this.incomingMessages.Writer.TryComplete());
-            Utils.SafeExecute(() => this.messagePump?.GetAwaiter().GetResult());
+            try { siloMessageCenter.SetHostedClient(null); } catch { }
+            try { incomingMessages.Writer.TryComplete(); } catch { }
+            messagePump?.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing).GetAwaiter().GetResult();
         }
 
         private void Start()

@@ -16,8 +16,8 @@ namespace Orleans.Runtime
     /// </summary>
     internal partial class Watchdog(IOptions<ClusterMembershipOptions> clusterMembershipOptions, IEnumerable<IHealthCheckParticipant> participants, ILogger<Watchdog> logger) : IDisposable
     {
-        private static readonly TimeSpan PlatformWatchdogHeartbeatPeriod = TimeSpan.FromMilliseconds(1000);
-        private readonly CancellationTokenSource _cancellation = new();
+        private static TimeSpan PlatformWatchdogHeartbeatPeriod => TimeSpan.FromMilliseconds(1000);
+        private readonly ManualResetEventSlim _cancellation = new(false);
         private readonly TimeSpan _componentHealthCheckPeriod = clusterMembershipOptions.Value.LocalHealthDegradationMonitoringPeriod;
         private readonly List<IHealthCheckParticipant> _participants = participants.ToList();
         private readonly ILogger _logger = logger;
@@ -72,7 +72,8 @@ namespace Orleans.Runtime
 
         protected void RunPlatformWatchdog()
         {
-            while (!_cancellation.IsCancellationRequested)
+            if (_cancellation.Wait(0)) return;
+            do
             {
                 try
                 {
@@ -85,8 +86,7 @@ namespace Orleans.Runtime
 
                 _platformWatchdogStopwatch.Restart();
                 _cumulativeGCPauseDuration = GC.GetTotalPauseDuration();
-                _cancellation.Token.WaitHandle.WaitOne(PlatformWatchdogHeartbeatPeriod);
-            }
+            } while (!_cancellation.Wait(PlatformWatchdogHeartbeatPeriod));
         }
 
         private void CheckRuntimeHealth()
@@ -113,7 +113,8 @@ namespace Orleans.Runtime
 
         protected void RunComponentWatchdog()
         {
-            while (!_cancellation.IsCancellationRequested)
+            if (_cancellation.Wait(0)) return;
+            do
             {
                 try
                 {
@@ -125,8 +126,7 @@ namespace Orleans.Runtime
                 }
 
                 _componentWatchdogStopwatch.Restart();
-                _cancellation.Token.WaitHandle.WaitOne(_componentHealthCheckPeriod);
-            }
+            } while (!_cancellation.Wait(_componentHealthCheckPeriod));
         }
 
         private void CheckComponentHealth()
@@ -171,14 +171,7 @@ namespace Orleans.Runtime
 
         public void Dispose()
         {
-            try
-            {
-                _cancellation.Cancel();
-            }
-            catch
-            {
-                // Ignore.
-            }
+            _cancellation.Set();
 
             try
             {

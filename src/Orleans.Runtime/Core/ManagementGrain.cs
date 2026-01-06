@@ -28,7 +28,6 @@ namespace Orleans.Runtime.Management
         private readonly GrainManifest siloManifest;
         private readonly ClusterManifest clusterManifest;
         private readonly ILogger logger;
-        private readonly Catalog catalog;
         private readonly GrainLocator grainLocator;
 
         public ManagementGrain(
@@ -38,7 +37,6 @@ namespace Orleans.Runtime.Management
             ILogger<ManagementGrain> logger,
             MembershipTableManager membershipTableManager,
             IClusterManifestProvider clusterManifestProvider,
-            Catalog catalog,
             GrainLocator grainLocator)
         {
             this.membershipTableManager = membershipTableManager;
@@ -48,7 +46,6 @@ namespace Orleans.Runtime.Management
             this.siloStatusOracle = siloStatusOracle;
             this.versionStore = versionStore;
             this.logger = logger;
-            this.catalog = catalog;
             this.grainLocator = grainLocator;
         }
 
@@ -127,12 +124,10 @@ namespace Orleans.Runtime.Management
         }
 
         public async Task<SimpleGrainStatistic[]> GetSimpleGrainStatistics(SiloAddress[] hostsIds)
-
         {
             var all = GetSiloAddresses(hostsIds).Select(s =>
                 GetSiloControlReference(s).GetSimpleGrainStatistics()).ToList();
-            await Task.WhenAll(all);
-            return all.SelectMany(s => s.Result).ToArray();
+            return (await Task.WhenAll(all)).SelectMany(s => s).ToArray();
         }
 
         public async Task<SimpleGrainStatistic[]> GetSimpleGrainStatistics()
@@ -152,8 +147,7 @@ namespace Orleans.Runtime.Management
 
             var all = GetSiloAddresses(hostsIds).Select(s =>
               GetSiloControlReference(s).GetDetailedGrainStatistics(types)).ToList();
-            await Task.WhenAll(all);
-            return all.SelectMany(s => s.Result).ToArray();
+            return (await Task.WhenAll(all)).SelectMany(s => s).ToArray();
         }
 
         public async Task<int> GetGrainActivationCount(GrainReference grainReference)
@@ -164,37 +158,36 @@ namespace Orleans.Runtime.Management
             foreach (var silo in hostsIds)
                 tasks.Add(GetSiloControlReference(silo).GetDetailedGrainReport(grainReference.GrainId));
 
-            await Task.WhenAll(tasks);
-            return tasks.Select(s => s.Result).Select(CountActivations).Sum();
+            return (await Task.WhenAll(tasks)).Sum(CountActivations);
             static int CountActivations(DetailedGrainReport report) => report.LocalActivation is { Length: > 0 } ? 1 : 0;
         }
 
-        public async Task SetCompatibilityStrategy(CompatibilityStrategy strategy)
+        public Task SetCompatibilityStrategy(CompatibilityStrategy strategy)
         {
-            await SetStrategy(
+            return SetStrategy(
                 store => store.SetCompatibilityStrategy(strategy),
                 siloControl => siloControl.SetCompatibilityStrategy(strategy));
         }
 
-        public async Task SetSelectorStrategy(VersionSelectorStrategy strategy)
+        public Task SetSelectorStrategy(VersionSelectorStrategy strategy)
         {
-            await SetStrategy(
+            return SetStrategy(
                 store => store.SetSelectorStrategy(strategy),
                 siloControl => siloControl.SetSelectorStrategy(strategy));
         }
 
-        public async Task SetCompatibilityStrategy(GrainInterfaceType interfaceType, CompatibilityStrategy strategy)
+        public Task SetCompatibilityStrategy(GrainInterfaceType interfaceType, CompatibilityStrategy strategy)
         {
             CheckIfIsExistingInterface(interfaceType);
-            await SetStrategy(
+            return SetStrategy(
                 store => store.SetCompatibilityStrategy(interfaceType, strategy),
                 siloControl => siloControl.SetCompatibilityStrategy(interfaceType, strategy));
         }
 
-        public async Task SetSelectorStrategy(GrainInterfaceType interfaceType, VersionSelectorStrategy strategy)
+        public Task SetSelectorStrategy(GrainInterfaceType interfaceType, VersionSelectorStrategy strategy)
         {
             CheckIfIsExistingInterface(interfaceType);
-            await SetStrategy(
+            return SetStrategy(
                 store => store.SetSelectorStrategy(interfaceType, strategy),
                 siloControl => siloControl.SetSelectorStrategy(interfaceType, strategy));
         }
@@ -207,12 +200,7 @@ namespace Orleans.Runtime.Management
             foreach (var silo in silos)
                 tasks.Add(GetSiloControlReference(silo).GetActivationCount());
 
-            await Task.WhenAll(tasks);
-            int sum = 0;
-            foreach (Task<int> task in tasks)
-                sum += task.Result;
-
-            return sum;
+            return (await Task.WhenAll(tasks)).Sum();
         }
 
         public Task<object[]> SendControlCommandToProvider<T>(string providerName, int command, object arg) where T : IControllable
@@ -358,14 +346,7 @@ namespace Orleans.Runtime.Management
                 tasks.Add(GetSiloControlReference(siloAddress).GetActiveGrains(grainType));
             }
 
-            await Task.WhenAll(tasks);
-            var results = new List<GrainId>();
-            foreach (var promise in tasks)
-            {
-                results.AddRange(await promise);
-            }
-
-            return results;
+            return [.. (await Task.WhenAll(tasks)).SelectMany(x => x)];
         }
 
         public async Task<List<GrainCallFrequency>> GetGrainCallFrequencies(SiloAddress[] hostsIds = null)

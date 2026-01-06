@@ -162,10 +162,8 @@ namespace Orleans.Runtime.Metadata
             }
 
             var fetchSuccess = true;
-            await Task.WhenAll(tasks);
-            foreach (var task in tasks)
+            foreach (var result in (await Task.WhenAll(tasks)))
             {
-                var result = await task;
                 if (result.Exception is Exception exception)
                 {
                     fetchSuccess = false;
@@ -233,14 +231,9 @@ namespace Orleans.Runtime.Metadata
                 StopAsync);
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
-            if (_shutdownCts.IsCancellationRequested)
-            {
-                return;
-            }
-
-            await StopAsync(CancellationToken.None);
+            return _shutdownCts.IsCancellationRequested ? default : new(StopAsync(CancellationToken.None));
         }
 
         public void Dispose()

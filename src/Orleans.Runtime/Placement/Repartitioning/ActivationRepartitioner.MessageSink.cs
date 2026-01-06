@@ -11,7 +11,7 @@ namespace Orleans.Runtime.Placement.Repartitioning;
 
 internal sealed partial class ActivationRepartitioner : IMessageStatisticsSink
 {
-    private readonly CancellationTokenSource _shutdownCts = new();
+    private volatile bool _shutdown;
 
     // This filter contains grain ids which will are anchored to the current silo.
     // Ids are inserted when a grain is found to have a negative transfer score.
@@ -21,14 +21,14 @@ internal sealed partial class ActivationRepartitioner : IMessageStatisticsSink
     public void StartProcessingEdges()
     {
         using var _ = new ExecutionContextSuppressor();
-        _processPendingEdgesTask = ProcessPendingEdges(_shutdownCts.Token);
+        _processPendingEdgesTask = ProcessPendingEdges();
 
         LogTraceServiceStarted(_logger, nameof(ActivationRepartitioner));
     }
 
     public async Task StopProcessingEdgesAsync(CancellationToken cancellationToken)
     {
-        _shutdownCts.Cancel();
+        _shutdown = true;
         if (_processPendingEdgesTask is null)
         {
             return;
@@ -40,14 +40,14 @@ internal sealed partial class ActivationRepartitioner : IMessageStatisticsSink
         LogTraceServiceStopped(_logger, nameof(ActivationRepartitioner));
     }
 
-    private async Task ProcessPendingEdges(CancellationToken cancellationToken)
+    private async Task ProcessPendingEdges()
     {
         await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding | ConfigureAwaitOptions.ContinueOnCapturedContext);
 
         var drainBuffer = new Message[128];
         var iteration = 0;
         const int MaxIterationsPerYield = 128;
-        while (!cancellationToken.IsCancellationRequested)
+        while (!_shutdown)
         {
             var count = _pendingMessages.DrainTo(drainBuffer);
             if (count > 0)

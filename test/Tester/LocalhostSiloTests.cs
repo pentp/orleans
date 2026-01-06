@@ -129,14 +129,13 @@ namespace Tester
             }
             finally
             {
-                using var cancelled = new CancellationTokenSource();
-                cancelled.Cancel();
-                await Utils.SafeExecuteAsync(clientHost.StopAsync(cancelled.Token));
-                await Utils.SafeExecuteAsync(silo2.StopAsync(cancelled.Token));
-                await Utils.SafeExecuteAsync(silo1.StopAsync(cancelled.Token));
-                Utils.SafeExecute(() => clientHost.Dispose());
-                Utils.SafeExecute(() => silo2.Dispose());
-                Utils.SafeExecute(() => silo1.Dispose());
+                using var cancelled = new CancellationTokenSource(0);
+                await clientHost.StopAsync(cancelled.Token).SuppressThrowing();
+                await silo2.StopAsync(cancelled.Token).SuppressThrowing();
+                await silo1.StopAsync(cancelled.Token).SuppressThrowing();
+                try { clientHost.Dispose(); } catch { }
+                try { silo2.Dispose(); } catch { }
+                try { silo1.Dispose(); } catch { }
             }
         }
     }

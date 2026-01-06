@@ -160,13 +160,13 @@ internal sealed partial class ActivationRebalancerWorker(
 
     public ValueTask<RebalancingReport> GetReport() => new(BuildReport());
 
-    public async Task ResumeRebalancing()
+    public Task ResumeRebalancing()
     {
         StartSession();
-        await ReportAllMonitors(CancellationToken.None);
+        return ReportAllMonitors(CancellationToken.None);
     }
 
-    public async Task SuspendRebalancing(TimeSpan? duration)
+    public Task SuspendRebalancing(TimeSpan? duration)
     {
         StopSession(StopReason.RebalancerSuspended, duration);
         
@@ -179,10 +179,10 @@ internal sealed partial class ActivationRebalancerWorker(
             LogSuspended();
         }
 
-        await ReportAllMonitors(CancellationToken.None);
+        return ReportAllMonitors(CancellationToken.None);
     }
 
-    private async Task ReportAllMonitors(CancellationToken cancellationToken)
+    private Task ReportAllMonitors(CancellationToken cancellationToken)
     {
         var tasks = new List<Task>();
         var report = BuildReport();
@@ -193,7 +193,7 @@ internal sealed partial class ActivationRebalancerWorker(
                 (Constants.ActivationRebalancerMonitorType, silo).Report(report));
         }
 
-        await Task.WhenAll(tasks).WaitAsync(cancellationToken);
+        return Task.WhenAll(tasks).WaitAsync(cancellationToken);
     }
 
     private RebalancingReport BuildReport()

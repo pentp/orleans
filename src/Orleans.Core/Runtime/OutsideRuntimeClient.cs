@@ -18,7 +18,7 @@ using static Orleans.Internal.StandardExtensions;
 
 namespace Orleans
 {
-    internal partial class OutsideRuntimeClient : IRuntimeClient, IDisposable, IClusterConnectionStatusListener
+    internal sealed partial class OutsideRuntimeClient : IRuntimeClient, IDisposable, IClusterConnectionStatusListener
     {
         internal static bool TestOnlyThrowExceptionDuringInit { get; set; }
 
@@ -357,7 +357,7 @@ namespace Orleans
 
         private void ConstructorReset()
         {
-            Utils.SafeExecute(() => this.Dispose());
+            try { Dispose(); } catch { }
         }
 
         /// <inheritdoc />
@@ -410,11 +410,9 @@ namespace Orleans
             if (this.disposing) return;
             this.disposing = true;
 
-            Utils.SafeExecute(() => this.callbackTimer.Dispose());
+            try { callbackTimer.Dispose(); } catch { }
+            try { MessageCenter?.Dispose(); } catch { }
 
-            Utils.SafeExecute(() => MessageCenter?.Dispose());
-
-            GC.SuppressFinalize(this);
             disposed = true;
         }
 

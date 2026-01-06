@@ -6,7 +6,7 @@ namespace Orleans.Runtime.Scheduler
 {
     internal sealed class AsyncClosureWorkItem : WorkItemBase
     {
-        private readonly TaskCompletionSource<bool> completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Func<Task> continuation;
         private readonly string? name;
 
@@ -32,7 +32,7 @@ namespace Orleans.Runtime.Scheduler
             {
                 RequestContext.Clear();
                 await this.continuation();
-                this.completion.TrySetResult(true);
+                this.completion.TrySetResult();
             }
             catch (Exception exception)
             {
@@ -86,7 +86,7 @@ namespace Orleans.Runtime.Scheduler
 
     internal sealed class ClosureWorkItem<TState>(Action<TState> closure, TState state, string? name, IGrainContext grainContext) : WorkItemBase
     {
-        private readonly TaskCompletionSource<bool> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public override string Name => name ?? AsyncClosureWorkItem.GetMethodName(closure);
         public Task Task => _completion.Task;
@@ -97,7 +97,7 @@ namespace Orleans.Runtime.Scheduler
             {
                 RequestContext.Clear();
                 closure(state);
-                _completion.TrySetResult(true);
+                _completion.TrySetResult();
             }
             catch (Exception exception)
             {
@@ -110,7 +110,7 @@ namespace Orleans.Runtime.Scheduler
 
     internal sealed class StatefulAsyncClosureWorkItem<TState> : WorkItemBase
     {
-        private readonly TaskCompletionSource<bool> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Func<TState, ValueTask> _continuation;
         private readonly TState _state;
         private readonly string? _name;
@@ -139,7 +139,7 @@ namespace Orleans.Runtime.Scheduler
             {
                 RequestContext.Clear();
                 await _continuation(_state);
-                _completion.TrySetResult(true);
+                _completion.TrySetResult();
             }
             catch (Exception exception)
             {

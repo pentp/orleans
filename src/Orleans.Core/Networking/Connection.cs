@@ -33,8 +33,8 @@ namespace Orleans.Runtime.Messaging
         private readonly Channel<Message> outgoingMessages;
         private readonly ChannelWriter<Message> outgoingMessageWriter;
         private readonly List<Message> inflight = new List<Message>(4);
-        private readonly TaskCompletionSource<int> _transportConnectionClosed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource<int> _initializationTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _transportConnectionClosed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _initializationTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private IDuplexPipe _transport;
         private Task _processIncomingTask;
         private Task _processOutgoingTask;
@@ -91,10 +91,7 @@ namespace Orleans.Runtime.Messaging
             {
                 error = exception;
             }
-            finally
-            {
-                await this.CloseAsync(error);
-            }
+            await this.CloseAsync(error);
         }
 
         private static Task OnConnectedAsync(ConnectionContext context)
@@ -106,13 +103,13 @@ namespace Orleans.Runtime.Messaging
             return connection.RunInternal();
         }
 
-        protected virtual async Task RunInternal()
+        protected virtual Task RunInternal()
         {
             _transport = this.Context.Transport;
             _processIncomingTask = this.ProcessIncoming();
             _processOutgoingTask = this.ProcessOutgoing();
-            _initializationTcs.TrySetResult(0);
-            await Task.WhenAll(_processIncomingTask, _processOutgoingTask);
+            _initializationTcs.TrySetResult();
+            return Task.WhenAll(_processIncomingTask, _processOutgoingTask);
         }
 
         /// <summary>
@@ -133,7 +130,7 @@ namespace Orleans.Runtime.Messaging
         private void OnTransportConnectionClosed()
         {
             StartClosing(new ConnectionAbortedException("Underlying connection closed"));
-            _transportConnectionClosed.SetResult(0);
+            _transportConnectionClosed.SetResult();
         }
 
         private void StartClosing(Exception exception)

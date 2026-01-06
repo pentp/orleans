@@ -225,8 +225,7 @@ internal sealed partial class DistributedGrainDirectory : SystemTarget, IGrainDi
         List<GrainAddress> result = [];
         List<Task> deactivationTasks = [];
         var stopwatch = CoarseStopwatch.StartNew();
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        using var cts = new CancellationTokenSource(0);
 
         foreach (var (grainId, activation) in _localActivations)
         {
@@ -318,14 +317,16 @@ internal sealed partial class DistributedGrainDirectory : SystemTarget, IGrainDi
             return Task.CompletedTask;
         }
 
-        async Task OnRuntimeInitializeStop(CancellationToken cancellationToken)
+        Task OnRuntimeInitializeStop(CancellationToken cancellationToken)
         {
             _stoppedCts.Cancel();
             if (_runTask is { } task)
             {
                 // Try to wait for hand-off to complete.
-                await this.RunOrQueueTask(async () => await task.WaitAsync(cancellationToken).SuppressThrowing());
+                return this.RunOrQueueTask(async () => await task.WaitAsync(cancellationToken).SuppressThrowing());
             }
+
+            return Task.CompletedTask;
         }
 
         async Task OnShuttingDown(CancellationToken token)

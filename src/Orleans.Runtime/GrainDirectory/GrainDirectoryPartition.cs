@@ -26,7 +26,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
     private readonly int _partitionIndex;
     private readonly DistributedGrainDirectory _owner;
     private readonly IInternalGrainFactory _grainFactory;
-    private readonly CancellationTokenSource _drainSnapshotsCts = new();
+    private volatile bool _drainSnapshots;
     private readonly SiloAddress _id;
     private readonly ILogger<GrainDirectoryPartition> _logger;
     private readonly TaskCompletionSource _snapshotsDrainedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -147,7 +147,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
                 LogDebugRemovingSnapshot(_logger, partitionSnapshot.DirectoryMembershipVersion, string.Join(", ", _partitionSnapshots.Select(s => s.DirectoryMembershipVersion)));
 
                 // If shutdown has been requested and there are no more pending snapshots, signal completion.
-                if (_drainSnapshotsCts.IsCancellationRequested && _partitionSnapshots.Count == 0)
+                if (_drainSnapshots && _partitionSnapshots.Count == 0)
                 {
                     _snapshotsDrainedTcs.TrySetResult();
                 }
@@ -228,17 +228,15 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
 
     public IGrainDirectoryPartition GetPartitionReference(SiloAddress address, int partitionIndex) => _grainFactory.GetSystemTarget<IGrainDirectoryPartition>(CreateGrainId(address, partitionIndex).GrainId);
 
-    internal async Task OnShuttingDown(CancellationToken token)
+    internal Task OnShuttingDown(CancellationToken token)
     {
-        await this.RunOrQueueTask(async () =>
+        _drainSnapshots = true;
+        return this.RunOrQueueTask(() =>
         {
-            _drainSnapshotsCts.Cancel();
-            if (_partitionSnapshots.Count > 0)
-            {
-                await _snapshotsDrainedTcs.Task.WaitAsync(token).SuppressThrowing();
-            }
+            return _partitionSnapshots.Count > 0 ? _snapshotsDrainedTcs.Task.WaitAsync(token) : Task.CompletedTask;
         });
     }
+
     internal Task OnSiloRemovedFromClusterAsync(ClusterMember change) =>
         this.QueueAction(
             static state => state.Self.OnSiloRemovedFromCluster(state.Change),
@@ -448,13 +446,14 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
 
                 // Note: there should be no 'await' points before this point.
                 // An await before this point would result in ranges not being locked synchronously.
-                await Task.WhenAll(tasks).WaitAsync(ShutdownToken).SuppressThrowing();
-                if (ShutdownToken.IsCancellationRequested)
+                var all = Task.WhenAll(tasks);
+                await ((Task)all).WaitAsync(ShutdownToken).SuppressThrowing();
+                if (!all.IsCompleted)
                 {
                     return;
                 }
 
-                success = tasks.All(t => t.Result);
+                success = !all.GetAwaiter().GetResult().Contains(false);
             }
             else
             {
@@ -523,8 +522,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
             // The acknowledgement step lets the previous owner know that the snapshot has been received so that it can proceed.
             InvokeOnClusterMember(
                 previousOwner,
-                async () => await partition.AcknowledgeSnapshotTransferAsync(_id, _partitionIndex, previousVersion),
-                false,
+                () => partition.AcknowledgeSnapshotTransferAsync(_id, _partitionIndex, previousVersion),
                 nameof(IGrainDirectoryPartition.AcknowledgeSnapshotTransferAsync)).Ignore();
 
             // Wait for previous versions to be unlocked before proceeding.
@@ -567,7 +565,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
         GrainRuntime.CheckRuntimeContext(this);
         LogDebugRecoveringActivations(_logger, addedRange, current.Version);
 
-        await foreach (var activations in GetRegisteredActivations(current, addedRange, isValidation: false))
+        foreach (var activations in await GetRegisteredActivations(current, addedRange, isValidation: false))
         {
             GrainRuntime.CheckRuntimeContext(this);
             foreach (var entry in activations)
@@ -583,7 +581,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
         LogDebugCompletedRecoveringActivations(_logger, addedRange, current.Version, stopwatch.Elapsed);
     }
 
-    private async IAsyncEnumerable<List<GrainAddress>> GetRegisteredActivations(DirectoryMembershipSnapshot current, RingRange range, bool isValidation)
+    private async Task<List<GrainAddress>[]> GetRegisteredActivations(DirectoryMembershipSnapshot current, RingRange range, bool isValidation)
     {
         // Membership is guaranteed to be at least as recent as the current view.
         var clusterMembershipSnapshot = _owner.ClusterMembershipSnapshot;
@@ -600,16 +598,9 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
             tasks.Add(GetRegisteredActivationsFromClusterMember(current.Version, range, member.SiloAddress, isValidation));
         }
 
-        await Task.WhenAll(tasks).WaitAsync(ShutdownToken).SuppressThrowing();
-        if (ShutdownToken.IsCancellationRequested)
-        {
-            yield break;
-        }
-
-        foreach (var task in tasks)
-        {
-            yield return await task;
-        }
+        var all = Task.WhenAll(tasks);
+        await ((Task)all).WaitAsync(ShutdownToken).SuppressThrowing();
+        return all.IsCompleted ? all.GetAwaiter().GetResult() : [];
 
         async Task<List<GrainAddress>> GetRegisteredActivationsFromClusterMember(MembershipVersion version, RingRange range, SiloAddress siloAddress, bool isValidation)
         {
@@ -617,31 +608,20 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
             var client = _grainFactory.GetSystemTarget<IGrainDirectoryClient>(Constants.GrainDirectoryType, siloAddress);
             var result = await InvokeOnClusterMember(
                 siloAddress,
-                async () =>
+                () =>
                 {
-                    var innerSw = ValueStopwatch.StartNew();
-                    Immutable<List<GrainAddress>> result = default;
-                        if (isValidation)
-                        {
-                            result = await client.GetRegisteredActivations(version, range, isValidation: true);
-                        }
-                        else
-                        {
-                            result = await client.RecoverRegisteredActivations(version, range, _id, _partitionIndex);
-                        }
-
-                    return result;
+                    return isValidation ? client.GetRegisteredActivations(version, range, isValidation: true)
+                        : client.RecoverRegisteredActivations(version, range, _id, _partitionIndex);
                 },
-                new Immutable<List<GrainAddress>>([]),
                 nameof(GetRegisteredActivations));
 
-            LogDebugRecoveredEntries(_logger, result.Value.Count, siloAddress, range, version, stopwatch.Elapsed.TotalMilliseconds);
-
-            return result.Value;
+            var value = result.Value ?? [];
+            LogDebugRecoveredEntries(_logger, value.Count, siloAddress, range, version, stopwatch.Elapsed.TotalMilliseconds);
+            return value;
         }
     }
 
-    private async Task<T> InvokeOnClusterMember<T>(SiloAddress siloAddress, Func<Task<T>> func, T defaultValue, string operationName)
+    private async Task<T> InvokeOnClusterMember<T>(SiloAddress siloAddress, Func<ValueTask<T>> func, string operationName)
     {
         GrainRuntime.CheckRuntimeContext(this);
         var clusterMembershipSnapshot = _owner.ClusterMembershipSnapshot;
@@ -674,7 +654,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
         }
 
         ShutdownToken.ThrowIfCancellationRequested();
-        return defaultValue;
+        return default!;
     }
 
     async ValueTask IGrainDirectoryTestHooks.CheckIntegrityAsync()
@@ -702,7 +682,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
             var missing = 0;
             var mismatched = 0;
             var total = 0;
-            await foreach (var activationList in GetRegisteredActivations(current, range, isValidation: true))
+            foreach (var activationList in await GetRegisteredActivations(current, range, isValidation: true))
             {
                 total += activationList.Count;
                 foreach (var entry in activationList)

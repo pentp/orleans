@@ -117,7 +117,7 @@ namespace Orleans.Runtime.MembershipService
             SiloAddress updatedSilo,
             SiloStatus updatedStatus)
         {
-            async Task Gossip()
+            Task Gossip()
             {
                 var tasks = new List<Task>(gossipPartners.Count);
                 foreach (var silo in gossipPartners)
@@ -125,7 +125,7 @@ namespace Orleans.Runtime.MembershipService
                     tasks.Add(this.GossipToRemoteSilo(silo, snapshot, updatedSilo, updatedStatus));
                 }
 
-                await Task.WhenAll(tasks);
+                return Task.WhenAll(tasks);
             }
 
             return this.RunOrQueueTask(Gossip);
