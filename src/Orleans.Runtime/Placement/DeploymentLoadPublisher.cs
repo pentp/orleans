@@ -159,10 +159,10 @@ namespace Orleans.Runtime
             NotifyAllStatisticsChangeEventsSubscribers(siloAddress, siloStats);
         }
 
-        internal async Task RefreshClusterStatistics()
+        internal Task RefreshClusterStatistics()
         {
             LogTraceRefreshStatistics(_logger);
-            await this.RunOrQueueTask(() =>
+            return this.RunOrQueueTask(() =>
                 {
                     var members = _siloStatusOracle.GetApproximateSiloStatuses(true).Keys;
                     var tasks = new List<Task>(members.Count);
@@ -229,7 +229,14 @@ namespace Orleans.Runtime
         {
             WorkItemGroup.QueueAction(() =>
             {
-                Utils.SafeExecute(() => OnSiloStatusChange(updatedSilo, status), _logger);
+                try
+                {
+                    OnSiloStatusChange(updatedSilo, status);
+                }
+                catch (Exception exc)
+                {
+                    Utils.LogIgnoredException(_logger, exc, null);
+                }
             });
         }
 

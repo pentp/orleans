@@ -28,16 +28,16 @@ namespace Orleans.Runtime.MembershipService
 
         public Task Ping(int pingNumber) => Task.CompletedTask;
 
-        public async Task MembershipChangeNotification(MembershipTableSnapshot snapshot)
+        public Task MembershipChangeNotification(MembershipTableSnapshot snapshot)
         {
             if (snapshot.Version != MembershipVersion.MinValue)
             {
-                await this.membershipTableManager.RefreshFromSnapshot(snapshot);
+                return this.membershipTableManager.RefreshFromSnapshot(snapshot);
             }
             else
             {
                 LogTraceReceivedGossipMembershipChangeNotificationWithMinValue(this.log);
-                await ReadTable();
+                return ReadTable();
             }
         }
 

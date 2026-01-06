@@ -149,7 +149,7 @@ namespace NonSilo.Tests.Membership
         {
             _clusterMembershipOptions.ProbeTimeout = TimeSpan.FromSeconds(2);
 
-            _prober.Probe(default, default, default).ReturnsForAnyArgs(info => Task.Delay(TimeSpan.FromSeconds(30)));
+            _prober.Probe(default, default).ReturnsForAnyArgs(info => Task.Delay(TimeSpan.FromSeconds(30)));
             _prober.ProbeIndirectly(default, default, default, default).ThrowsAsyncForAnyArgs(new InvalidOperationException("No"));
             _monitor.Start();
 

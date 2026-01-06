@@ -72,7 +72,7 @@ internal sealed partial class ActivationRepartitioner : SystemTarget, IActivatio
         _lastExchangedStopwatch = CoarseStopwatch.StartNew();
         shared.ActivationDirectory.RecordNewTarget(this);
         _siloStatusOracle.SubscribeToSiloStatusEvents(this);
-        _timer = RegisterTimer(_ => TriggerExchangeRequest().AsTask(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _timer = RegisterGrainTimer((t, _) => t.TriggerExchangeRequest().AsTask(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     private Task OnActiveStart(CancellationToken cancellationToken)

@@ -93,44 +93,30 @@ namespace Orleans.Streams
 
             lastTimeCleanedPubSubCache = DateTime.UtcNow;
 
-            try
+            using (ExecutionContext.SuppressFlow())
             {
-                if (queueAdapterCache != null)
+                try
                 {
-                    using var _ = new ExecutionContextSuppressor();
-                    queueCache = queueAdapterCache.CreateQueueCache(QueueId);
+                    queueCache = queueAdapterCache?.CreateQueueCache(QueueId);
                 }
-            }
-            catch (Exception exc)
-            {
-                LogErrorCreatingQueueCache(exc);
-                throw;
-            }
+                catch (Exception exc)
+                {
+                    LogErrorCreatingQueueCache(exc);
+                    throw;
+                }
 
-            try
-            {
-                using var _ = new ExecutionContextSuppressor();
-                receiver = queueAdapter.CreateReceiver(QueueId);
-            }
-            catch (Exception exc)
-            {
-                LogErrorCreatingReceiver(exc);
-                throw;
-            }
+                try
+                {
+                    receiver = queueAdapter.CreateReceiver(QueueId);
+                }
+                catch (Exception exc)
+                {
+                    LogErrorCreatingReceiver(exc);
+                    throw;
+                }
 
-            try
-            {
-                using var _ = new ExecutionContextSuppressor();
-                receiverInitTask = OrleansTaskExtentions.SafeExecute(() => receiver.Initialize(this.options.InitQueueTimeout))
-                    .LogException(logger, ErrorCode.PersistentStreamPullingAgent_03, $"QueueAdapterReceiver {QueueId:H} failed to Initialize.");
+                receiverInitTask = ReceiverInit();
                 receiverInitTask.Ignore();
-            }
-            catch (Exception exception)
-            {
-                LogErrorReceiverInit(new(QueueId), exception);
-
-                // Just ignore this exception and proceed as if Initialize has succeeded.
-                // We already logged individual exceptions for individual calls to Initialize. No need to log again.
             }
 
             // Setup a reader for a new receiver.
@@ -142,6 +128,19 @@ namespace Orleans.Streams
 
             LogInfoTakingQueue(new(QueueId));
             return Task.CompletedTask;
+        }
+
+        private async Task ReceiverInit()
+        {
+            try
+            {
+                await receiver.Initialize(options.InitQueueTimeout);
+            }
+            catch (Exception ex)
+            {
+                LogErrorReceiverInit(new(QueueId), ex);
+                throw;
+            }
         }
 
         public async Task Shutdown()
@@ -164,20 +163,16 @@ namespace Orleans.Streams
 
             try
             {
-                IQueueAdapterReceiver localReceiver = this.receiver;
-                this.receiver = null;
-                if (localReceiver != null)
+                if (receiver is { } localReceiver)
                 {
-                    var task = OrleansTaskExtentions.SafeExecute(() => localReceiver.Shutdown(this.options.InitQueueTimeout));
-                    task = task.LogException(logger, ErrorCode.PersistentStreamPullingAgent_07,
-                        $"QueueAdapterReceiver {QueueId} failed to Shutdown.");
-                    await task;
+                    receiver = null;
+                    await localReceiver.Shutdown(this.options.InitQueueTimeout);
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // Just ignore this exception and proceed as if Shutdown has succeeded.
-                // We already logged individual exceptions for individual calls to Shutdown. No need to log again.
+                LogWarningUnregisterProducer(ex);
             }
 
             var unregisterTasks = new List<Task>();
@@ -208,11 +203,20 @@ namespace Orleans.Streams
         {
             LogDebugAddSubscriber(streamId, streamConsumer);
             // cannot await here because explicit consumers trigger this call, so it could cause a deadlock.
-            AddSubscriber_Impl(subscriptionId, streamId, streamConsumer, filterData, null)
-                .LogException(logger, ErrorCode.PersistentStreamPullingAgent_26,
-                    $"Failed to add subscription for stream {streamId}.")
-                .Ignore();
+            _ = AddSubscriberSafe(subscriptionId, streamId, streamConsumer, filterData);
             return Task.CompletedTask;
+        }
+
+        private async Task AddSubscriberSafe(GuidId subscriptionId, QualifiedStreamId streamId, GrainId streamConsumer, string filterData)
+        {
+            try
+            {
+                await AddSubscriber_Impl(subscriptionId, streamId, streamConsumer, filterData, null);
+            }
+            catch (Exception ex)
+            {
+                LogErrorAddingSubscriber(streamId, ex);
+            }
         }
 
         // Called by rendezvous when new remote subscriber subscribes to this stream.
@@ -911,6 +915,9 @@ namespace Orleans.Streams
             Message = "Exception while retrying the {RetryCounter}th time reading from queue {QueueId}"
         )]
         private partial void LogErrorRetrying(int retryCounter, QueueIdLogRecord queueId, Exception exception);
+
+        [LoggerMessage(Level = LogLevel.Error, EventId = (int)ErrorCode.PersistentStreamPullingAgent_26, Message = "Failed to add subscription for stream {StreamId}.")]
+        private partial void LogErrorAddingSubscriber(QualifiedStreamId streamId, Exception exception);
 
         [LoggerMessage(
             Level = LogLevel.Warning,

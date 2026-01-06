@@ -20,7 +20,7 @@ namespace Orleans.Runtime
             }
 
             // Don't capture the current ExecutionContext and its AsyncLocals onto the timer
-            using var suppressExecutionContext = new ExecutionContextSuppressor();
+            using var suppressExecutionContext = ExecutionContext.SuppressFlow();
 
             return new Timer(callback, state, dueTime, period);
         }

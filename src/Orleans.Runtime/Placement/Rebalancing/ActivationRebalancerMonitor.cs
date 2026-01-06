@@ -67,9 +67,9 @@ internal sealed partial class ActivationRebalancerMonitor : SystemTarget, IActiv
            OnStop);
     }
 
-    private async Task OnStart(CancellationToken cancellationToken)
+    private Task OnStart(CancellationToken cancellationToken)
     {
-        await this.RunOrQueueTask(async () =>
+        return this.RunOrQueueTask(async () =>
         {
             _monitorTimer = RegisterGrainTimer(async ct =>
             {
@@ -86,9 +86,9 @@ internal sealed partial class ActivationRebalancerMonitor : SystemTarget, IActiv
         });
     }
 
-    private async Task OnStop(CancellationToken cancellationToken)
+    private Task OnStop(CancellationToken cancellationToken)
     {
-        await this.RunOrQueueTask(() =>
+        return this.RunOrQueueTask(() =>
         {
             if (_latestReport is { } report && Silo.IsSameLogicalSilo(report.Host))
             {

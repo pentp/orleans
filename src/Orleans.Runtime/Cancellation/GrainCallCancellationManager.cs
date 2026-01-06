@@ -140,7 +140,7 @@ internal partial class GrainCallCancellationManager : SystemTarget, IGrainCallCa
                             worker.WorkItemChannel.Writer.TryComplete();
                             try
                             {
-                                worker.Cts.Cancel(throwOnFirstException: false);
+                                worker.Cts.Cancel();
                             }
                             catch
                             {
@@ -252,7 +252,6 @@ internal partial class GrainCallCancellationManager : SystemTarget, IGrainCallCa
         }
     }
 
-    private Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     private async Task StopAsync(CancellationToken cancellationToken)
     {
         var tasks = new List<Task>();
@@ -266,7 +265,7 @@ internal partial class GrainCallCancellationManager : SystemTarget, IGrainCallCa
             worker.WorkItemChannel.Writer.TryComplete();
             try
             {
-                worker.Cts.Cancel(throwOnFirstException: false);
+                worker.Cts.Cancel();
             }
             catch
             {
@@ -276,7 +275,7 @@ internal partial class GrainCallCancellationManager : SystemTarget, IGrainCallCa
 
         try
         {
-            _shuttingDownCts.Cancel(throwOnFirstException: false);
+            _shuttingDownCts.Cancel();
         }
         catch (Exception exception)
         {
@@ -292,7 +291,7 @@ internal partial class GrainCallCancellationManager : SystemTarget, IGrainCallCa
         lifecycle.Subscribe(
             nameof(GrainCallCancellationManager),
             ServiceLifecycleStage.RuntimeGrainServices,
-                ct => this.RunOrQueueTask(() => StartAsync(ct)),
+                ct => Task.CompletedTask,
                 ct => this.RunOrQueueTask(() => StopAsync(ct)));
     }
 

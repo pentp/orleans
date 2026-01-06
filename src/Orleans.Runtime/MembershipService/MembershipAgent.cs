@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Orleans.Configuration;
 using System.Threading.Tasks;
@@ -18,7 +19,6 @@ namespace Orleans.Runtime.MembershipService
         private static readonly TimeSpan EXP_BACKOFF_CONTENTION_MIN = TimeSpan.FromMilliseconds(200);
         private static readonly TimeSpan EXP_BACKOFF_CONTENTION_MAX = TimeSpan.FromMinutes(2);
         private static readonly TimeSpan EXP_BACKOFF_STEP = TimeSpan.FromMilliseconds(1000);
-        private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
         private readonly MembershipTableManager tableManager;
         private readonly ILocalSiloDetails localSilo;
         private readonly IFatalErrorHandler fatalErrorHandler;
@@ -59,6 +59,7 @@ namespace Orleans.Runtime.MembershipService
 
         private async Task UpdateIAmAlive()
         {
+            await Task.Yield();
             LogDebugStartingPeriodicMembershipLivenessTimestampUpdates();
             try
             {
@@ -138,12 +139,12 @@ namespace Orleans.Runtime.MembershipService
                         activeSilos.Add(entry.SiloAddress);
                     }
 
-                    var failedSilos = await CheckClusterConnectivity(activeSilos.ToArray());
-                    var successfulSilos = activeSilos.Where(s => !failedSilos.Contains(s)).ToList();
+                    var failedSilos = await CheckClusterConnectivity(activeSilos);
 
                     // If there were no failures, terminate the loop and return without error.
                     if (failedSilos.Count == 0) break;
 
+                    var successfulSilos = activeSilos.FindAll(s => !failedSilos.Contains(s));
                     LogErrorFailedToGetPingResponses(failedSilos.Count, activeSilos.Count, new(successfulSilos), new(failedSilos), attemptUntil, attemptNumber);
 
                     if (now + TimeSpan.FromSeconds(5) > attemptUntil)
@@ -169,33 +170,25 @@ namespace Orleans.Runtime.MembershipService
                 now = this.getUtcDateTime();
             }
 
-            async Task<List<SiloAddress>> CheckClusterConnectivity(SiloAddress[] members)
+            async Task<List<SiloAddress>> CheckClusterConnectivity(List<SiloAddress> members)
             {
-                if (members.Length == 0) return new List<SiloAddress>();
+                if (members.Count == 0) return members;
 
-                var tasks = new List<Task<bool>>(members.Length);
+                var tasks = new List<Task<bool>>(members.Count);
 
-                LogInformationAboutToSendPings(members.Length, new EnumerableToStringLogValue<SiloAddress>(members));
+                LogInformationAboutToSendPings(members.Count, new EnumerableToStringLogValue<SiloAddress>(members));
 
-                var timeout = this.clusterMembershipOptions.ProbeTimeout;
                 foreach (var silo in members)
                 {
-                    tasks.Add(ProbeSilo(this.siloProber, silo, timeout, this.log));
+                    tasks.Add(ProbeSilo(silo));
                 }
 
-                try
-                {
-                    await Task.WhenAll(tasks);
-                }
-                catch
-                {
-                    // Ignore exceptions for now.
-                }
+                var results = await Task.WhenAll(tasks);
 
                 var failed = new List<SiloAddress>();
-                for (var i = 0; i < tasks.Count; i++)
+                for (var i = 0; i < results.Length; i++)
                 {
-                    if (tasks[i].Status != TaskStatus.RanToCompletion || !tasks[i].GetAwaiter().GetResult())
+                    if (!results[i])
                     {
                         failed.Add(members[i]);
                     }
@@ -204,26 +197,24 @@ namespace Orleans.Runtime.MembershipService
                 return failed;
             }
 
-            static async Task<bool> ProbeSilo(IRemoteSiloProber siloProber, SiloAddress silo, TimeSpan timeout, ILogger log)
+            async Task<bool> ProbeSilo(SiloAddress silo)
             {
-                Exception exception;
                 try
                 {
-                    await siloProber.Probe(silo, 0).WaitAsync(timeout);
+                    await siloProber.Probe(silo, 0).WaitAsync(clusterMembershipOptions.ProbeTimeout);
                     return true;
                 }
                 catch (Exception ex)
                 {
-                    exception = ex;
+                    LogWarningDidNotReceiveProbeResponse(log, ex, silo, clusterMembershipOptions.ProbeTimeout);
+                    return false;
                 }
-
-                LogWarningDidNotReceiveProbeResponse(log, exception, silo, timeout);
-                return false;
             }
         }
 
         private async Task BecomeJoining()
         {
+            await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
             LogInformationJoining();
             try
             {
@@ -238,6 +229,7 @@ namespace Orleans.Runtime.MembershipService
 
         private async Task BecomeShuttingDown()
         {
+            await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
             LogDebugShutdown();
 
             try
@@ -247,7 +239,6 @@ namespace Orleans.Runtime.MembershipService
             catch (Exception exc)
             {
                 LogErrorErrorUpdatingStatusToShuttingDown(exc);
-                throw;
             }
         }
 
@@ -268,6 +259,7 @@ namespace Orleans.Runtime.MembershipService
 
         private async Task BecomeDead()
         {
+            await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
             LogDebugUpdatingStatusToDead();
 
             try
@@ -277,83 +269,76 @@ namespace Orleans.Runtime.MembershipService
             catch (Exception exception)
             {
                 LogErrorFailureUpdatingStatusToDead(exception);
-                throw;
             }
         }
 
-        private async Task UpdateStatus(SiloStatus status)
+        private Task UpdateStatus(SiloStatus status)
         {
-            await this.tableManager.UpdateStatus(status);
+            return this.tableManager.UpdateStatus(status);
         }
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
             {
-                Task OnRuntimeInitializeStart(CancellationToken ct) => Task.CompletedTask;
-
                 async Task OnRuntimeInitializeStop(CancellationToken ct)
                 {
                     this.iAmAliveTimer.Dispose();
-                    this.cancellation.Cancel();
-                    await Task.WhenAny(
-                        Task.Run(() => this.BecomeDead()),
-                        Task.Delay(TimeSpan.FromMinutes(1)));
+                    await BecomeDead().WaitAsync(TimeSpan.FromMinutes(1)).SuppressThrowing();
                 }
 
                 lifecycle.Subscribe(
                     nameof(MembershipAgent),
                     ServiceLifecycleStage.RuntimeInitialize + 1, // Gossip before the outbound queue gets closed
-                    OnRuntimeInitializeStart,
+                    ct => Task.CompletedTask,
                     OnRuntimeInitializeStop);
             }
 
             {
-                async Task AfterRuntimeGrainServicesStart(CancellationToken ct)
-                {
-                    await Task.Run(() => this.BecomeJoining());
-                }
-
-                Task AfterRuntimeGrainServicesStop(CancellationToken ct) => Task.CompletedTask;
-
                 lifecycle.Subscribe(
                     nameof(MembershipAgent),
                     ServiceLifecycleStage.AfterRuntimeGrainServices,
-                    AfterRuntimeGrainServicesStart,
-                    AfterRuntimeGrainServicesStop);
+                    ct => BecomeJoining());
             }
 
             {
-                var tasks = new List<Task>();
+                var updateIAmAliveTask = Task.CompletedTask;
 
                 async Task OnBecomeActiveStart(CancellationToken ct)
                 {
-                    await Task.Run(() => this.BecomeActive());
-                    tasks.Add(Task.Run(() => this.UpdateIAmAlive()));
+                    await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+                    await BecomeActive();
+                    updateIAmAliveTask = UpdateIAmAlive();
                 }
 
                 async Task OnBecomeActiveStop(CancellationToken ct)
                 {
                     this.iAmAliveTimer.Dispose();
-                    this.cancellation.Cancel(throwOnFirstException: false);
-                    var cancellationTask = ct.WhenCancelled();
 
+                    await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
                     if (ct.IsCancellationRequested)
                     {
-                        await Task.Run(() => this.BecomeStopping());
+                        await BecomeStopping();
                     }
                     else
                     {
                         // Allow some minimum time for graceful shutdown.
-                        var gracePeriod = Task.WhenAll(Task.Delay(ClusterMembershipOptions.ClusteringShutdownGracePeriod), cancellationTask);
-                        var task = await Task.WhenAny(gracePeriod, this.BecomeShuttingDown());
-                        if (ReferenceEquals(task, gracePeriod))
+                        var gracePeriod = Stopwatch.GetTimestamp();
+                        var shutdown = BecomeShuttingDown();
+                        await shutdown.WaitAsync(ClusterMembershipOptions.ClusteringShutdownGracePeriod).SuppressThrowing();
+                        await shutdown.WaitAsync(ct).SuppressThrowing();
+                        if (!shutdown.IsCompleted)
                         {
                             this.log.LogWarning("Graceful shutdown aborted: starting ungraceful shutdown");
-                            await Task.Run(() => this.BecomeStopping());
+                            await BecomeStopping();
                         }
                         else
                         {
-                            await Task.WhenAny(gracePeriod, Task.WhenAll(tasks));
+                            var remainigGrace = ClusterMembershipOptions.ClusteringShutdownGracePeriod - Stopwatch.GetElapsedTime(gracePeriod);
+                            if (remainigGrace.Ticks > 0)
+                            {
+                                await updateIAmAliveTask.WaitAsync(remainigGrace).SuppressThrowing();
+                            }
+                            await updateIAmAliveTask.WaitAsync(ct).SuppressThrowing();
                         }
                     }
                 }

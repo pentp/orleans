@@ -241,10 +241,7 @@ internal sealed partial class AsyncEnumerableGrainExtension : IAsyncEnumerableGr
         try
         {
             // Wait for either the MoveNextAsync task to complete or the polling timeout to elapse.
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var longPollingTimeout = _messagingOptions.ConfiguredResponseTimeout / 2;
-            cts.CancelAfter(longPollingTimeout);
-            await moveNextTask.WaitAsync(cts.Token).SuppressThrowing();
+            await moveNextTask.WaitAsync(_messagingOptions.ConfiguredResponseTimeout / 2, cancellationToken).SuppressThrowing();
 
             // Update the enumerator state to indicate that we are not currently waiting for MoveNextAsync to complete.
             // If the MoveNextAsync task completed then clear that now, too.
@@ -300,13 +297,7 @@ internal sealed partial class AsyncEnumerableGrainExtension : IAsyncEnumerableGr
         }
     }
 
-    private async ValueTask RemoveEnumeratorAsync(Guid requestId)
-    {
-        if (_enumerators.Remove(requestId, out var state))
-        {
-            await DisposeEnumeratorAsync(state);
-        }
-    }
+    private ValueTask RemoveEnumeratorAsync(Guid requestId) => _enumerators.Remove(requestId, out var state) ? DisposeEnumeratorAsync(state) : default;
 
     private async ValueTask<(EnumerationResult Status, object Value)> OnTerminateAsync(Guid requestId, EnumerationResult status, object value)
     {

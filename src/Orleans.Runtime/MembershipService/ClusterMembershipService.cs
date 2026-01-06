@@ -75,7 +75,7 @@ namespace Orleans.Runtime
             }
         }
 
-        public async Task<bool> TryKill(SiloAddress siloAddress) => await this.membershipTableManager.TryKill(siloAddress);
+        public Task<bool> TryKill(SiloAddress siloAddress) => this.membershipTableManager.TryKill(siloAddress);
 
         private async Task ProcessMembershipUpdates(CancellationToken ct)
         {
@@ -104,19 +104,19 @@ namespace Orleans.Runtime
 
         void ILifecycleParticipant<ISiloLifecycle>.Participate(ISiloLifecycle lifecycle)
         {
-            var tasks = new List<Task>(1);
+            var initTask = Task.CompletedTask;
             var cancellation = new CancellationTokenSource();
             Task OnRuntimeInitializeStart(CancellationToken _)
             {
-                tasks.Add(Task.Run(() => this.ProcessMembershipUpdates(cancellation.Token)));
+                initTask = Task.Run(() => this.ProcessMembershipUpdates(cancellation.Token));
                 return Task.CompletedTask;
             }
 
             async Task OnRuntimeInitializeStop(CancellationToken ct)
             {
-                cancellation.Cancel(throwOnFirstException: false);
-                var shutdownGracePeriod = Task.WhenAll(Task.Delay(ClusterMembershipOptions.ClusteringShutdownGracePeriod), ct.WhenCancelled());
-                await Task.WhenAny(shutdownGracePeriod, Task.WhenAll(tasks));
+                cancellation.Cancel();
+                await initTask.WaitAsync(ClusterMembershipOptions.ClusteringShutdownGracePeriod).SuppressThrowing();
+                await initTask.WaitAsync(ct).SuppressThrowing();
             }
 
             lifecycle.Subscribe(

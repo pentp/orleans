@@ -181,23 +181,25 @@ namespace Orleans.Runtime.MembershipService
                     }
 
                     var isDirectProbe = !options.EnableIndirectProbes || _failedProbes < options.NumMissedProbesLimit - 1 || otherNodes.Length == 0;
-                    var timeout = GetTimeout(isDirectProbe);
-                    using var cancellation = new CancellationTokenSource(timeout);
+                    var timeout = GetTimeout();
 
                     if (isDirectProbe)
                     {
                         // Probe the silo directly.
-                        probeResult = await this.ProbeDirectly(cancellation.Token).ConfigureAwait(false);
+                        probeResult = await this.ProbeDirectly(timeout).ConfigureAwait(false);
                     }
                     else
                     {
                         // Pick a random other node and probe the target indirectly, using the selected node as an intermediary.
                         var intermediary = otherNodes[Random.Shared.Next(otherNodes.Length)];
 
+                        // Indirect probes need extra time to account for the additional hop.
+                        var indirectProbeTimeout = timeout + options.ProbeTimeout;
+
                         // Select a timeout which will allow the intermediary node to attempt to probe the target node and still respond to this node
                         // if the remote node does not respond in time.
                         // Attempt to account for local health degradation by extending the timeout period.
-                        probeResult = await this.ProbeIndirectly(intermediary, timeout, cancellation.Token).ConfigureAwait(false);
+                        probeResult = await this.ProbeIndirectly(intermediary, timeout, indirectProbeTimeout).ConfigureAwait(false);
 
                         // If the intermediary is not entirely healthy, remove it from consideration and continue to probe.
                         // Note that all recused silos will be included in the consideration set the next time cluster membership changes.
@@ -220,7 +222,7 @@ namespace Orleans.Runtime.MembershipService
                 }
             }
 
-            TimeSpan GetTimeout(bool isDirectProbe)
+            TimeSpan GetTimeout()
             {
                 var additionalTimeout = 0;
 
@@ -229,12 +231,6 @@ namespace Orleans.Runtime.MembershipService
                     // Attempt to account for local health degradation by extending the timeout period.
                     var localDegradationScore = _localSiloHealthMonitor.GetLocalHealthDegradationScore(DateTime.UtcNow);
                     additionalTimeout += localDegradationScore;
-                }
-
-                if (!isDirectProbe)
-                {
-                    // Indirect probes need extra time to account for the additional hop.
-                    additionalTimeout += 1;
                 }
 
                 // When the debugger is attached, extend probe times so that silos are not terminated
@@ -251,9 +247,8 @@ namespace Orleans.Runtime.MembershipService
         /// <summary>
         /// Probes the remote silo.
         /// </summary>
-        /// <param name="cancellation">A token to cancel and fail the probe attempt.</param>
         /// <returns>The number of failed probes since the last successful probe.</returns>
-        private async Task<ProbeResult> ProbeDirectly(CancellationToken cancellation)
+        private async Task<ProbeResult> ProbeDirectly(TimeSpan timeout)
         {
             var id = ++_nextProbeId;
             LogTraceGoingToSendPing(_log, id, TargetSiloAddress);
@@ -263,21 +258,18 @@ namespace Orleans.Runtime.MembershipService
             Exception? failureException;
             try
             {
-                await _prober.Probe(TargetSiloAddress, id, cancellation).WaitAsync(cancellation);
+                await _prober.Probe(TargetSiloAddress, id).WaitAsync(timeout, _stoppingCancellation.Token);
                 failureException = null;
             }
-            catch (OperationCanceledException exception)
+            catch (TimeoutException exception)
             {
-                failureException = new OperationCanceledException($"The ping attempt was cancelled after {roundTripTimer.Elapsed}. Ping #{id}", exception);
+                failureException = new TimeoutException($"The ping attempt timed out after {roundTripTimer.Elapsed}. Ping #{id}", exception);
             }
             catch (Exception exception)
             {
                 failureException = exception;
             }
-            finally
-            {
-                roundTripTimer.Stop();
-            }
+            roundTripTimer.Stop();
 
             if (failureException is null)
             {
@@ -308,9 +300,8 @@ namespace Orleans.Runtime.MembershipService
         /// </summary>
         /// <param name="intermediary">The node to probe the target with.</param>
         /// <param name="directProbeTimeout">The amount of time which the intermediary should allow for the target to respond.</param>
-        /// <param name="cancellation">A token to cancel and fail the probe attempt.</param>
         /// <returns>The number of failed probes since the last successful probe.</returns>
-        private async Task<ProbeResult> ProbeIndirectly(SiloAddress intermediary, TimeSpan directProbeTimeout, CancellationToken cancellation)
+        private async Task<ProbeResult> ProbeIndirectly(SiloAddress intermediary, TimeSpan directProbeTimeout, TimeSpan indirectProbeTimeout)
         {
             var id = ++_nextProbeId;
             LogTraceGoingToSendIndirectPing(_log, id, TargetSiloAddress, intermediary);
@@ -319,8 +310,7 @@ namespace Orleans.Runtime.MembershipService
             ProbeResult probeResult;
             try
             {
-                using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellation, _stoppingCancellation.Token);
-                var indirectResult = await _prober.ProbeIndirectly(intermediary, TargetSiloAddress, directProbeTimeout, id, cancellationSource.Token).WaitAsync(cancellationSource.Token);
+                var indirectResult = await _prober.ProbeIndirectly(intermediary, TargetSiloAddress, directProbeTimeout, id).WaitAsync(indirectProbeTimeout, _stoppingCancellation.Token);
                 roundTripTimer.Stop();
                 var roundTripTime = roundTripTimer.Elapsed - indirectResult.ProbeResponseTime;
 

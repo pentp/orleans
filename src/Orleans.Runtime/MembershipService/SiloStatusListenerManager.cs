@@ -156,7 +156,7 @@ internal partial class SiloStatusListenerManager : ILifecycleParticipant<ISiloLi
 
         async Task OnStop(CancellationToken ct)
         {
-            _cancellation.Cancel(throwOnFirstException: false);
+            _cancellation.Cancel();
             if (task is not null)
             {
                 await task.WaitAsync(ct).SuppressThrowing();

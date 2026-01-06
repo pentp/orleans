@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Orleans.Runtime
 {
-    internal class GrainLifecycle(ILogger logger) : LifecycleSubject(logger), IGrainLifecycle
+    internal sealed class GrainLifecycle(ILogger logger) : LifecycleSubject(logger), IGrainLifecycle
     {
         private static readonly ImmutableDictionary<int, string> StageNames = GetStageNames(typeof(GrainLifecycleStage));
         private List<IGrainMigrationParticipant> _migrationParticipants;

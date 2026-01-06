@@ -118,20 +118,18 @@ namespace Orleans.Runtime
                 }
 
                 var iteration = 0;
-                var now = DateTime.UtcNow;
                 foreach (var activationEntry in _recentlyUsedActivations)
                 {
                     var activation = activationEntry.Key;
                     lock (activation)
                     {
-                        activation.AnalyzeWorkload(now, messageCenter, _messageFactory, options);
+                        activation.AnalyzeWorkload(messageCenter, _messageFactory, options);
                     }
 
                     // Yield execution frequently
                     if (++iteration % 100 == 0)
                     {
                         await Task.Yield();
-                        now = DateTime.UtcNow;
                     }
                 }
             }

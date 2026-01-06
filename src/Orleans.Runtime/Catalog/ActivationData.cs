@@ -51,6 +51,9 @@ internal sealed partial class ActivationData :
     private Queue<object>? _pendingOperations;
     private Message? _blockingRequest;
     private bool _isInWorkingSet = true;
+    private bool IsStuckDeactivating;
+    private bool IsStuckProcessingMessage;
+    private bool IsDisposing;
     private CoarseStopwatch _busyDuration;
     private CoarseStopwatch _idleDuration;
     private GrainReference? _selfReference;
@@ -142,7 +145,7 @@ internal sealed partial class ActivationData :
     public bool IsInactive => !IsCurrentlyExecuting && _waitingRequests.Count == 0;
     public bool IsCurrentlyExecuting => _runningRequests.Count > 0;
     public IWorkItemScheduler Scheduler => _workItemGroup;
-    public Task Deactivated => GetDeactivationCompletionSource().Task;
+    public Task Deactivated => GetDeactivationTask();
 
     public SiloAddress? ForwardingAddress
     {
@@ -189,19 +192,6 @@ internal sealed partial class ActivationData :
         }
     }
 
-    private HashSet<IGrainTimer>? Timers
-    {
-        get => _extras?.Timers;
-        set
-        {
-            lock (this)
-            {
-                _extras ??= new();
-                _extras.Timers = value;
-            }
-        }
-    }
-
     private DateTime? DeactivationStartTime
     {
         get => _extras?.DeactivationStartTime;
@@ -211,32 +201,6 @@ internal sealed partial class ActivationData :
             {
                 _extras ??= new();
                 _extras.DeactivationStartTime = value;
-            }
-        }
-    }
-
-    private bool IsStuckDeactivating
-    {
-        get => _extras?.IsStuckDeactivating ?? false;
-        set
-        {
-            lock (this)
-            {
-                _extras ??= new();
-                _extras.IsStuckDeactivating = value;
-            }
-        }
-    }
-
-    private bool IsStuckProcessingMessage
-    {
-        get => _extras?.IsStuckProcessingMessage ?? false;
-        set
-        {
-            lock (this)
-            {
-                _extras ??= new();
-                _extras.IsStuckProcessingMessage = value;
             }
         }
     }
@@ -598,8 +562,7 @@ internal sealed partial class ActivationData :
     {
         lock (this)
         {
-            Timers ??= new HashSet<IGrainTimer>();
-            Timers.Add(timer);
+            ((_extras ??= new()).Timers ??= []).Add(timer);
         }
     }
 
@@ -607,12 +570,7 @@ internal sealed partial class ActivationData :
     {
         lock (this) // need to lock since dispose can be called on finalizer thread, outside grain context (not single threaded).
         {
-            if (Timers is null)
-            {
-                return;
-            }
-
-            Timers.Remove(timer);
+            _extras?.Timers?.Remove(timer);
         }
     }
 
@@ -620,14 +578,13 @@ internal sealed partial class ActivationData :
     {
         lock (this)
         {
-            if (Timers is null)
+            if (_extras?.Timers is not { } timers)
             {
                 return;
             }
 
             // Need to set Timers to null since OnTimerDisposed mutates the timers set if it is not null.
-            var timers = Timers;
-            Timers = null;
+            _extras.Timers = null;
 
             // Dispose all timers.
             foreach (var timer in timers)
@@ -637,7 +594,7 @@ internal sealed partial class ActivationData :
         }
     }
 
-    public void AnalyzeWorkload(DateTime now, IMessageCenter messageCenter, MessageFactory messageFactory, SiloMessagingOptions options)
+    public void AnalyzeWorkload(IMessageCenter messageCenter, MessageFactory messageFactory, SiloMessagingOptions options)
     {
         var slowRunningRequestDuration = options.RequestProcessingWarningTime;
         var longQueueTimeDuration = options.RequestQueueDelayWarningTime;
@@ -767,9 +724,8 @@ internal sealed partial class ActivationData :
 
     public async ValueTask DisposeAsync()
     {
-        _extras ??= new();
-        if (_extras.IsDisposing) return;
-        _extras.IsDisposing = true;
+        if (IsDisposing) return;
+        IsDisposing = true;
 
         CancelPendingOperations();
 
@@ -1038,21 +994,20 @@ internal sealed partial class ActivationData :
                 return;
             }
 
-            if (State is ActivationState.Deactivating)
+            if (State is ActivationState.Deactivating && !IsStuckDeactivating)
             {
                 // Determine whether to declare this activation as stuck
                 var deactivatingTime = GrainRuntime.TimeProvider.GetUtcNow().UtcDateTime - DeactivationStartTime!.Value;
-                if (deactivatingTime > _shared.MaxRequestProcessingTime && !IsStuckDeactivating)
+                if (deactivatingTime > _shared.MaxRequestProcessingTime)
                 {
                     IsStuckDeactivating = true;
-                    if (DeactivationReason.Description is { Length: > 0 } && DeactivationReason.ReasonCode != DeactivationReasonCode.ActivationUnresponsive)
+                    if (DeactivationReason is { Description: { Length: > 0 } description, ReasonCode: not DeactivationReasonCode.ActivationUnresponsive })
                     {
                         DeactivationReason = new(DeactivationReasonCode.ActivationUnresponsive,
-                            $"{DeactivationReason.Description}. Activation {this} has been deactivating since {DeactivationStartTime.Value} and is likely stuck");
+                            $"{description}. Activation {this} has been deactivating since {DeactivationStartTime.Value} and is likely stuck");
                     }
                 }
-
-                if (!IsStuckDeactivating && !IsStuckProcessingMessage)
+                else if (!IsStuckProcessingMessage)
                 {
                     // Do not forward messages while the grain is still deactivating and has not been declared stuck, since they
                     // will be forwarded to the same grain instance.
@@ -1279,19 +1234,10 @@ internal sealed partial class ActivationData :
             OnCompletedRequest(message);
         }
 
-        static async ValueTask OnCompleteAsync(ActivationData activation, Message message, Task task)
+        static async Task OnCompleteAsync(ActivationData activation, Message message, Task task)
         {
-            try
-            {
-                await task;
-            }
-            catch
-            {
-            }
-            finally
-            {
-                activation.OnCompletedRequest(message);
-            }
+            await task.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+            activation.OnCompletedRequest(message);
         }
     }
 
@@ -1759,7 +1705,7 @@ internal sealed partial class ActivationData :
         }
 
         // Signal deactivation
-        GetDeactivationCompletionSource().TrySetResult(true);
+        SetDeactivationTask();
         _workSignal.Signal();
 
         async ValueTask<bool> StartMigrationAsync(DehydrationContextHolder context, IActivationMigrationManager migrationManager, CancellationToken cancellationToken)
@@ -1798,12 +1744,19 @@ internal sealed partial class ActivationData :
         }
     }
 
-    private TaskCompletionSource<bool> GetDeactivationCompletionSource()
+    private Task GetDeactivationTask()
     {
         lock (this)
         {
-            _extras ??= new();
-            return _extras.DeactivationTask ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            return (_extras ??= new()).GetDeactivationTask();
+        }
+    }
+
+    private void SetDeactivationTask()
+    {
+        lock (this)
+        {
+            (_extras ??= new()).SetDeactivationTask();
         }
     }
 
@@ -2000,13 +1953,8 @@ internal sealed partial class ActivationData :
     /// <summary>
     /// Additional properties which are not needed for the majority of an activation's lifecycle.
     /// </summary>
-    private class ActivationDataExtra : Dictionary<object, object>
+    private sealed class ActivationDataExtra : Dictionary<object, object>
     {
-        private const int IsStuckProcessingMessageFlag = 1 << 0;
-        private const int IsStuckDeactivatingFlag = 1 << 1;
-        private const int IsDisposingFlag = 1 << 2;
-        private byte _flags;
-
         public HashSet<IGrainTimer>? Timers { get => GetValueOrDefault<HashSet<IGrainTimer>>(nameof(Timers)); set => SetOrRemoveValue(nameof(Timers), value); }
 
         /// <summary>
@@ -2019,10 +1967,18 @@ internal sealed partial class ActivationData :
         /// </summary>
         public SiloAddress? ForwardingAddress { get => GetValueOrDefault<SiloAddress>(nameof(ForwardingAddress)); set => SetOrRemoveValue(nameof(ForwardingAddress), value); }
 
-        /// <summary>
-        /// A <see cref="TaskCompletionSource{TResult}"/> which completes when a grain has deactivated.
-        /// </summary>
-        public TaskCompletionSource<bool>? DeactivationTask { get => GetDeactivationInfoOrDefault()?.DeactivationTask; set => EnsureDeactivationInfo().DeactivationTask = value; }
+        public Task GetDeactivationTask()
+        {
+            ref var t = ref EnsureDeactivationInfo().DeactivationTask;
+            return t as Task ?? ((TaskCompletionSource)(t ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))).Task;
+        }
+
+        public void SetDeactivationTask()
+        {
+            ref var t = ref EnsureDeactivationInfo().DeactivationTask;
+            (t as TaskCompletionSource)?.TrySetResult();
+            t = Task.CompletedTask;
+        }
 
         public DateTime? DeactivationStartTime { get => GetDeactivationInfoOrDefault()?.DeactivationStartTime; set => EnsureDeactivationInfo().DeactivationStartTime = value; }
 
@@ -2034,30 +1990,8 @@ internal sealed partial class ActivationData :
         public DehydrationContextHolder? DehydrationContext { get => GetValueOrDefault<DehydrationContextHolder>(nameof(DehydrationContext)); set => SetOrRemoveValue(nameof(DehydrationContext), value); }
 
         private DeactivationInfo? GetDeactivationInfoOrDefault() => GetValueOrDefault<DeactivationInfo>(nameof(DeactivationInfo));
-        private DeactivationInfo EnsureDeactivationInfo()
-        {
-            ref var info = ref CollectionsMarshal.GetValueRefOrAddDefault(this, nameof(DeactivationInfo), out _);
-            info ??= new DeactivationInfo();
-            return (DeactivationInfo)info;
-        }
+        private DeactivationInfo EnsureDeactivationInfo() => (DeactivationInfo)(CollectionsMarshal.GetValueRefOrAddDefault(this, nameof(DeactivationInfo), out _) ??= new DeactivationInfo());
 
-        public bool IsStuckProcessingMessage { get => GetFlag(IsStuckProcessingMessageFlag); set => SetFlag(IsStuckProcessingMessageFlag, value); }
-        public bool IsStuckDeactivating { get => GetFlag(IsStuckDeactivatingFlag); set => SetFlag(IsStuckDeactivatingFlag, value); }
-        public bool IsDisposing { get => GetFlag(IsDisposingFlag); set => SetFlag(IsDisposingFlag, value); }
-
-        private void SetFlag(int flag, bool value)
-        {
-            if (value)
-            {
-                _flags |= (byte)flag;
-            }
-            else
-            {
-                _flags &= (byte)~flag;
-            }
-        }
-
-        private bool GetFlag(int flag) => (_flags & flag) != 0;
         private T? GetValueOrDefault<T>(object key)
         {
             TryGetValue(key, out var result);
@@ -2080,7 +2014,7 @@ internal sealed partial class ActivationData :
         {
             public DateTime? DeactivationStartTime;
             public DeactivationReason DeactivationReason;
-            public TaskCompletionSource<bool>? DeactivationTask;
+            public object? DeactivationTask;
         }
     }
 
@@ -2090,7 +2024,7 @@ internal sealed partial class ActivationData :
         private readonly CancellationTokenSource _cts = cts;
         public CancellationToken CancellationToken => _cts.Token;
 
-        public virtual void Cancel()
+        public void Cancel()
         {
             lock (this)
             {
@@ -2113,8 +2047,6 @@ internal sealed partial class ActivationData :
             {
                 // Ignore.
             }
-
-            GC.SuppressFinalize(this);
         }
 
         public sealed class Deactivate(CancellationTokenSource cts, ActivationState previousState) : Command(cts)

@@ -93,20 +93,16 @@ namespace Orleans.Runtime.ReminderService
                 ServiceLifecycleStage.Active,
                 async ct =>
                 {
-                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    cts.CancelAfter(this.reminderOptions.InitializationTimeout);
-
                     try
                     {
-                        await this.QueueTask(Start).WaitAsync(cts.Token);
+                        await this.QueueTask(Start).WaitAsync(reminderOptions.InitializationTimeout, ct);
                     }
                     catch (Exception exception)
                     {
                         LogErrorStartingReminderService(exception);
                         throw;
                     }
-                },
-                ct => Task.CompletedTask);
+                });
         }
 
         /// <summary>
@@ -124,7 +120,7 @@ namespace Orleans.Runtime.ReminderService
 
         public async override Task Stop()
         {
-            await base.Stop();
+            _ = base.Stop();
 
             if (listRefreshTimer != null)
             {

@@ -209,14 +209,14 @@ namespace Orleans.Runtime.Messaging
             }
         }
 
-        public async Task CloseAsync(SiloAddress endpoint)
+        public Task CloseAsync(SiloAddress endpoint)
         {
             ImmutableArray<Connection> connections;
             lock (this.lockObj)
             {
                 if (!this.connections.TryGetValue(endpoint, out var entry))
                 {
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 connections = entry.Connections;
@@ -228,7 +228,7 @@ namespace Orleans.Runtime.Messaging
 
             if (connections.Length == 1)
             {
-                await connections[0].CloseAsync(exception: null);
+                return connections[0].CloseAsync(exception: null);
             }
             else if (!connections.IsEmpty)
             {
@@ -244,8 +244,10 @@ namespace Orleans.Runtime.Messaging
                     }
                 }
 
-                await Task.WhenAll(closeTasks);
+                return Task.WhenAll(closeTasks);
             }
+
+            return Task.CompletedTask;
         }
 
         public async Task Close(CancellationToken ct)
@@ -254,7 +256,7 @@ namespace Orleans.Runtime.Messaging
             {
                 LogDebugShuttingDownConnections(this.trace);
 
-                this.shutdownCancellation.Cancel(throwOnFirstException: false);
+                this.shutdownCancellation.Cancel();
 
                 var cycles = 0;
                 for (var closeTasks = new List<Task>(); ; closeTasks.Clear())

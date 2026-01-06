@@ -324,20 +324,9 @@ namespace Orleans.Streams
                 agents.Add(agent);
                 deactivatedAgents[queueId] = agent;
                 var agentGrainRef = agent.AsReference<IPersistentStreamPullingAgent>();
-                var task = OrleansTaskExtentions.SafeExecute(agentGrainRef.Shutdown);
-                task = task.LogException(logger, ErrorCode.PersistentStreamPullingManager_11,
-                    $"PersistentStreamPullingAgent {agent.QueueId} failed to Shutdown.");
-                removeTasks.Add(task);
+                removeTasks.Add(Shutdown(agent, agentGrainRef));
             }
-            try
-            {
-                await Task.WhenAll(removeTasks);
-            }
-            catch
-            {
-                // Just ignore this exception and proceed as if Initialize has succeeded.
-                // We already logged individual exceptions for individual calls to Shutdown. No need to log again.
-            }
+            await Task.WhenAll(removeTasks);
 
             if (agents.Count > 0)
             {
@@ -346,6 +335,18 @@ namespace Orleans.Streams
                     new(agents),
                     NumberRunningAgents,
                     new(queuesToAgentsMap.Keys));
+            }
+        }
+
+        private async Task Shutdown(PersistentStreamPullingAgent agent, IPersistentStreamPullingAgent agentGrainRef)
+        {
+            try
+            {
+                await agentGrainRef.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                LogErrorShutdownAgent(agent.QueueId, ex);
             }
         }
 
@@ -545,6 +546,9 @@ namespace Orleans.Streams
             Message = "Removed {RemovedCount} queues: {RemovedQueues}. Now own total of {QueueCount} queues: {Queues}."
         )]
         private partial void LogInfoRemovedQueues(int removedCount, AgentsLogRecord removedQueues, int queueCount, QueueIdsLogRecord queues);
+
+        [LoggerMessage(Level = LogLevel.Error, EventId = (int)ErrorCode.PersistentStreamPullingManager_11, Message = "PersistentStreamPullingAgent {QueueId} failed to Shutdown.")]
+        private partial void LogErrorShutdownAgent(QueueId queueId, Exception ex);
 
         [LoggerMessage(
             Level = LogLevel.Information,

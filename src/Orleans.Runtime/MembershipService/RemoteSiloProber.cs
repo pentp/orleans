@@ -10,16 +10,16 @@ namespace Orleans.Runtime.MembershipService;
 internal class RemoteSiloProber(IServiceProvider serviceProvider) : IRemoteSiloProber
 {
     /// <inheritdoc />
-    public async Task Probe(SiloAddress remoteSilo, int probeNumber, CancellationToken cancellationToken)
+    public Task Probe(SiloAddress remoteSilo, int probeNumber)
     {
         var systemTarget = serviceProvider.GetRequiredService<MembershipSystemTarget>();
-        await systemTarget.ProbeRemoteSilo(remoteSilo, probeNumber).WaitAsync(cancellationToken);
+        return systemTarget.ProbeRemoteSilo(remoteSilo, probeNumber);
     }
 
     /// <inheritdoc />
-    public async Task<IndirectProbeResponse> ProbeIndirectly(SiloAddress intermediary, SiloAddress target, TimeSpan probeTimeout, int probeNumber, CancellationToken cancellationToken)
+    public Task<IndirectProbeResponse> ProbeIndirectly(SiloAddress intermediary, SiloAddress target, TimeSpan probeTimeout, int probeNumber)
     {
         var systemTarget = serviceProvider.GetRequiredService<MembershipSystemTarget>();
-        return await systemTarget.ProbeRemoteSiloIndirectly(intermediary, target, probeTimeout, probeNumber).WaitAsync(cancellationToken);
+        return systemTarget.ProbeRemoteSiloIndirectly(intermediary, target, probeTimeout, probeNumber);
     }
 }

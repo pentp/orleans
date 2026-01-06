@@ -279,13 +279,13 @@ namespace Orleans.Runtime.MembershipService
 
             Task OnActiveStart(CancellationToken ct)
             {
-                tasks.Add(Task.Run(() => this.ProcessMembershipUpdates()));
+                tasks.Add(Task.Run(ProcessMembershipUpdates));
                 return Task.CompletedTask;
             }
 
             async Task OnActiveStop(CancellationToken ct)
             {
-                this.shutdownCancellation.Cancel(throwOnFirstException: false);
+                this.shutdownCancellation.Cancel();
 
                 foreach (var monitor in this.monitoredSilos.Values)
                 {
@@ -295,33 +295,36 @@ namespace Orleans.Runtime.MembershipService
                 this.monitoredSilos = ImmutableDictionary<SiloAddress, SiloHealthMonitor>.Empty;
 
                 // Allow some minimum time for graceful shutdown.
-                var shutdownGracePeriod = Task.WhenAll(Task.Delay(ClusterMembershipOptions.ClusteringShutdownGracePeriod), ct.WhenCancelled());
-                await Task.WhenAny(shutdownGracePeriod, Task.WhenAll(tasks));
+                var all = Task.WhenAll(tasks);
+                await all.WaitAsync(ClusterMembershipOptions.ClusteringShutdownGracePeriod).SuppressThrowing();
+                await all.WaitAsync(ct).SuppressThrowing();
             }
         }
 
         /// <summary>
         /// Performs the default action when a new probe result is created.
         /// </summary>
-        private async Task OnProbeResultInternal(SiloHealthMonitor monitor, ProbeResult probeResult)
+        private Task OnProbeResultInternal(SiloHealthMonitor monitor, ProbeResult probeResult)
         {
             // Do not act on probe results if shutdown is in progress.
             if (this.shutdownCancellation.IsCancellationRequested)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             if (probeResult.IsDirectProbe)
             {
                 if (probeResult.Status == ProbeResultStatus.Failed && probeResult.FailedProbeCount >= this.clusterMembershipOptions.CurrentValue.NumMissedProbesLimit)
                 {
-                    await this.membershipService.TryToSuspectOrKill(monitor.TargetSiloAddress).ConfigureAwait(false);
+                    return this.membershipService.TryToSuspectOrKill(monitor.TargetSiloAddress);
                 }
             }
             else if (probeResult.Status == ProbeResultStatus.Failed)
             {
-                await this.membershipService.TryToSuspectOrKill(monitor.TargetSiloAddress, probeResult.Intermediary).ConfigureAwait(false);
+                return this.membershipService.TryToSuspectOrKill(monitor.TargetSiloAddress, probeResult.Intermediary);
             }
+
+            return Task.CompletedTask;
         }
 
         bool IHealthCheckable.CheckHealth(DateTime lastCheckTime, out string reason)
