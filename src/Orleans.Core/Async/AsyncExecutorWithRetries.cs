@@ -46,14 +46,13 @@ namespace Orleans.Internal
             IBackoffProvider onErrorBackOff)
         {
             async Task<bool> function(int i) { await action(i); return true; }
-            return ExecuteWithRetriesHelper<bool>(
+            return ExecuteWithRetries(
                 function,
                 0,
                 maxNumErrorTries,
-                maxExecutionTime,
-                DateTime.UtcNow,
                 null,
                 retryExceptionFilter,
+                maxExecutionTime,
                 null,
                 onErrorBackOff);
         }
@@ -134,7 +133,7 @@ namespace Orleans.Internal
         /// <returns>
         /// The value returned from the successful invocation of <paramref name="function"/>.
         /// </returns>
-        public static Task<T> ExecuteWithRetries<T>(
+        public async static Task<T> ExecuteWithRetries<T>(
             Func<int, Task<T>> function,
             int maxNumSuccessTries,
             int maxNumErrorTries,
@@ -145,69 +144,7 @@ namespace Orleans.Internal
             IBackoffProvider onErrorBackOff = null,
             CancellationToken cancellationToken = default)
         {
-            return ExecuteWithRetriesHelper<T>(
-                function,
-                maxNumSuccessTries,
-                maxNumErrorTries,
-                maxExecutionTime,
-                DateTime.UtcNow,
-                retryValueFilter,
-                retryExceptionFilter,
-                onSuccessBackOff,
-                onErrorBackOff,
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// Execute a given <paramref name="function"/> a number of times, based on retry configuration parameters.
-        /// </summary>
-        /// <typeparam name="T">
-        /// The underlying return type of <paramref name="function"/>.
-        /// </typeparam>
-        /// <param name="function">
-        /// Function to execute.
-        /// </param>
-        /// <param name="maxNumSuccessTries">
-        /// Maximal number of successful execution attempts. <see cref="ExecuteWithRetries"/> will try to re-execute the given <paramref name="function"/> again if directed so by <paramref name="retryValueFilter"/> .
-        /// Set to <c>-1</c> for unlimited number of success retries, until <paramref name="retryValueFilter"/> is satisfied. Set to <c>0</c> for only one success attempt, which will cause <paramref name="retryValueFilter"/> to be
-        /// ignored and the given <paramref name="function"/> executed only once until first success.
-        /// </param>
-        /// <param name="maxNumErrorTries">
-        /// Maximal number of execution attempts due to errors. Set to -1 for unlimited number of error retries, until <paramref name="retryExceptionFilter"/> is satisfied.
-        /// </param>
-        /// <param name="maxExecutionTime">
-        /// The maximal execution time of the <see cref="ExecuteWithRetries"/> function.
-        /// </param>
-        /// <param name="startExecutionTime">
-        /// The time at which execution was started.
-        /// </param>
-        /// <param name="retryValueFilter">
-        /// Filter <paramref name="function"/> to indicate if successful execution should be retried. Set to <see langword="null"/> to disable successful retries.
-        /// </param>
-        /// <param name="retryExceptionFilter">
-        /// Filter <paramref name="function"/> to indicate if error execution should be retried. Set to <see langword="null"/> to disable error retries.
-        /// </param>
-        /// <param name="onSuccessBackOff">
-        /// The backoff provider object, which determines how much to wait between success retries.
-        /// </param>
-        /// <param name="onErrorBackOff">
-        /// The backoff provider object, which determines how much to wait between error retries
-        /// </param>
-        /// <returns>
-        /// The value returned from the successful invocation of <paramref name="function"/>.
-        /// </returns>
-        private static async Task<T> ExecuteWithRetriesHelper<T>(
-            Func<int, Task<T>> function,
-            int maxNumSuccessTries,
-            int maxNumErrorTries,
-            TimeSpan maxExecutionTime,
-            DateTime startExecutionTime,
-            Func<T, int, bool> retryValueFilter = null,
-            Func<Exception, int, bool> retryExceptionFilter = null,
-            IBackoffProvider onSuccessBackOff = null,
-            IBackoffProvider onErrorBackOff = null,
-            CancellationToken cancellationToken = default)
-        {
+            var startExecutionTime = DateTime.UtcNow;
             T result = default;
             ExceptionDispatchInfo lastExceptionInfo = null;
             bool retry;

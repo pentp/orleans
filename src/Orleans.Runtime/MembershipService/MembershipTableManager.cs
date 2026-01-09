@@ -161,16 +161,7 @@ namespace Orleans.Runtime.MembershipService
                 await this.membershipTableProvider.InitializeMembershipTable(true);
 
                 // Perform an initial table read
-                var refreshed = await AsyncExecutorWithRetries.ExecuteWithRetries(
-                    function: _ => this.RefreshInternal(requireCleanup: true),
-                    maxNumSuccessTries: NUM_CONDITIONAL_WRITE_CONTENTION_ATTEMPTS,
-                    maxNumErrorTries: NUM_CONDITIONAL_WRITE_ERROR_ATTEMPTS,
-                    retryValueFilter: (value, i) => !value,
-                    retryExceptionFilter: (exc, i) => true,
-                    maxExecutionTime: this.clusterMembershipOptions.MaxJoinAttemptTime,
-                    onSuccessBackOff: new ExponentialBackoff(EXP_BACKOFF_CONTENTION_MIN, EXP_BACKOFF_CONTENTION_MAX, EXP_BACKOFF_STEP),
-                    onErrorBackOff: new ExponentialBackoff(EXP_BACKOFF_ERROR_MIN, EXP_BACKOFF_ERROR_MAX, EXP_BACKOFF_STEP));
-
+                var refreshed = await MembershipExecuteWithRetries(_ => RefreshInternal(requireCleanup: true));
                 if (!refreshed)
                 {
                     throw new OrleansException("Failed to perform initial membership refresh and cleanup.");
@@ -267,25 +258,15 @@ namespace Orleans.Runtime.MembershipService
             }
         }
 
-        private static Task<bool> MembershipExecuteWithRetries(
-            Func<int, Task<bool>> taskFunction,
-            TimeSpan timeout)
-        {
-            return MembershipExecuteWithRetries(taskFunction, timeout, (result, i) => result == false);
-        }
-
-        private static Task<T> MembershipExecuteWithRetries<T>(
-            Func<int, Task<T>> taskFunction,
-            TimeSpan timeout,
-            Func<T, int, bool> retryValueFilter)
+        private Task<bool> MembershipExecuteWithRetries(Func<int, Task<bool>> taskFunction)
         {
             return AsyncExecutorWithRetries.ExecuteWithRetries(
                     taskFunction,
                     NUM_CONDITIONAL_WRITE_CONTENTION_ATTEMPTS,
                     NUM_CONDITIONAL_WRITE_ERROR_ATTEMPTS,
-                    retryValueFilter,   // if failed to Update on contention - retry
+                    (result, _) => !result,   // if failed to Update on contention - retry
                     (exc, i) => true,            // Retry on errors.
-                    timeout,
+                    clusterMembershipOptions.MaxJoinAttemptTime,
                     new ExponentialBackoff(EXP_BACKOFF_CONTENTION_MIN, EXP_BACKOFF_CONTENTION_MAX, EXP_BACKOFF_STEP), // how long to wait between successful retries
                     new ExponentialBackoff(EXP_BACKOFF_ERROR_MIN, EXP_BACKOFF_ERROR_MAX, EXP_BACKOFF_STEP)  // how long to wait between error retries
             );
@@ -321,8 +302,7 @@ namespace Orleans.Runtime.MembershipService
                     return;
                 }
 
-                bool ok = await MembershipExecuteWithRetries(UpdateMyStatusTask, this.clusterMembershipOptions.MaxJoinAttemptTime);
-
+                bool ok = await MembershipExecuteWithRetries(UpdateMyStatusTask);
                 if (ok)
                 {
                     LogDebugSuccessfullyUpdatedMyStatus(this.log, myAddress, status);
